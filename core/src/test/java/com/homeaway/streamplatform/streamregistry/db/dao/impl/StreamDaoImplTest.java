@@ -50,7 +50,7 @@ import com.homeaway.streamplatform.streamregistry.extensions.validation.StreamVa
 import com.homeaway.streamplatform.streamregistry.model.Stream;
 import com.homeaway.streamplatform.streamregistry.provider.InfraManager;
 import com.homeaway.streamplatform.streamregistry.streams.ManagedKStreams;
-import com.homeaway.streamplatform.streamregistry.streams.ManagedKafkaRegistryProducer;
+import com.homeaway.streamplatform.streamregistry.streams.ManagedKafkaProducer;
 
 public class StreamDaoImplTest {
 
@@ -58,7 +58,7 @@ public class StreamDaoImplTest {
 
     private static final AvroStreamKey TEST_STREAM_KEY = new AvroStreamKey("test_stream");
 
-    private ManagedKafkaRegistryProducer streamRegistryProducer = mock(ManagedKafkaRegistryProducer.class);
+    private ManagedKafkaProducer streamRegistryProducer = mock(ManagedKafkaProducer.class);
     private ManagedKStreams managedKStreams = mock(ManagedKStreams.class);
     private RegionDao regionDao = mock(RegionDao.class);
     private InfraManager infraManager = mock(InfraManager.class);

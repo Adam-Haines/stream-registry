@@ -117,6 +117,15 @@ public class SourceDaoImpl implements SourceDao, Managed {
      * Instantiates a new Source dao.
      *
      * @param commonConfig the common config
+     */
+    public SourceDaoImpl(Properties commonConfig) {
+        this(commonConfig, null);
+    }
+
+    /**
+     * Instantiates a new Source dao.
+     *
+     * @param commonConfig the common config
      * @param testListener the test listener
      */
     public SourceDaoImpl(Properties commonConfig, KStreamsProcessorListener testListener) {

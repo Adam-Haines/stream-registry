@@ -15,7 +15,12 @@
  */
 package com.homeaway.streamplatform.streamregistry.db.dao.impl;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Properties;
 
 import javax.ws.rs.InternalServerErrorException;
 
@@ -276,7 +281,7 @@ public class StreamDaoImpl extends AbstractDao implements StreamDao, StreamValid
     public List<Stream> getAllStreams() {
         List<Stream> streamList = new ArrayList<>();
         log.info("Pulling stream information from local instance's state-store");
-        KeyValueIterator<AvroStreamKey, AvroStream> allStreams = (KeyValueIterator<AvroStreamKey, AvroStream>)kStreams.getAllValues();
+        KeyValueIterator<AvroStreamKey, AvroStream> allStreams = kStreams.getAllStreams();
         allStreams.forEachRemaining(avroStream -> streamList.add(AvroToJsonDTO.convertAvroToJson(avroStream.value)));
         return streamList;
     }

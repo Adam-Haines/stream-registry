@@ -28,12 +28,11 @@ import javax.ws.rs.Produces;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 
-import io.swagger.annotations.Api;
-import io.swagger.annotations.Tag;
 import lombok.extern.slf4j.Slf4j;
 
 import com.codahale.metrics.annotation.Timed;
 
+import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import io.swagger.annotations.ApiParam;
 import io.swagger.annotations.ApiResponse;

@@ -25,7 +25,6 @@ import java.util.concurrent.CompletableFuture;
 import javax.validation.Validator;
 import javax.ws.rs.client.Client;
 
-import io.confluent.kafka.streams.serdes.avro.SpecificAvroDeserializer;
 import kafka.admin.AdminUtils;
 import kafka.admin.RackAwareMode;
 import kafka.utils.ZKStringSerializer$;
@@ -41,6 +40,7 @@ import io.confluent.kafka.schemaregistry.client.CachedSchemaRegistryClient;
 import io.confluent.kafka.schemaregistry.client.SchemaRegistryClient;
 import io.confluent.kafka.serializers.AbstractKafkaAvroSerDeConfig;
 import io.confluent.kafka.serializers.KafkaAvroSerializer;
+import io.confluent.kafka.streams.serdes.avro.SpecificAvroDeserializer;
 import io.dropwizard.configuration.YamlConfigurationFactory;
 import io.dropwizard.jackson.Jackson;
 import io.dropwizard.jersey.validation.Validators;
@@ -203,7 +203,7 @@ public class BaseResourceIT {
 
         BaseResourceIT.topicsConfig = new TopicsConfig();
         BaseResourceIT.topicsConfig.setProducerTopic(producerTopic);
-        BaseResourceIT.topicsConfig.setStateStoreName(topicsConfig.getStateStoreName());
+        BaseResourceIT.topicsConfig.setStreamSourceStateStore(topicsConfig.getStreamSourceStateStore());
 
         infraManager = buildInfraManager();
 

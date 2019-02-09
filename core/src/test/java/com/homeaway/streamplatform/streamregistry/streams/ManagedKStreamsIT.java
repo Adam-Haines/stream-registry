@@ -46,12 +46,12 @@ public class ManagedKStreamsIT extends BaseResourceIT {
 
         // CREATE a stream
         AbstractMap.SimpleEntry<AvroStreamKey, AvroStream> avroMessage = sampleMessageBuilder.buildSampleMessage(streamName, OperationType.UPSERT);
-        streamProducer.log(avroMessage.getKey(), avroMessage.getValue());
+        managedKafkaProducer.log(avroMessage.getKey(), avroMessage.getValue());
 
         Thread.sleep(TEST_SLEEP_WAIT_MS);
 
         // Validate whether the stream is in KV-Store
-        Optional<AvroStream> avroStreamForKey = streamProcessor.getAvroStreamForKey(AvroStreamKey.newBuilder().setStreamName(streamName).build());
+        Optional<AvroStream> avroStreamForKey = managedKStreams.getAvroStreamForKey(AvroStreamKey.newBuilder().setStreamName(streamName).build());
         AvroStream avroStream = avroStreamForKey.get();
         Assert.assertEquals(streamName, avroStream.getName());
         Assert.assertEquals(avroMessage.getValue(), avroStream);
@@ -71,23 +71,23 @@ public class ManagedKStreamsIT extends BaseResourceIT {
 
         // CREATE a stream
         AbstractMap.SimpleEntry<AvroStreamKey, AvroStream> avroMessage = sampleMessageBuilder.buildSampleMessage(streamName, OperationType.UPSERT);
-        streamProducer.log(avroMessage.getKey(), avroMessage.getValue());
+        managedKafkaProducer.log(avroMessage.getKey(), avroMessage.getValue());
 
         Thread.sleep(TEST_SLEEP_WAIT_MS);
 
         // Validate whether the stream is in KV-Store
-        Optional<AvroStream> avroStreamForKey = streamProcessor.getAvroStreamForKey(AvroStreamKey.newBuilder().setStreamName(streamName).build());
+        Optional<AvroStream> avroStreamForKey = managedKStreams.getAvroStreamForKey(AvroStreamKey.newBuilder().setStreamName(streamName).build());
         AvroStream avroStream = avroStreamForKey.get();
         Assert.assertEquals(streamName, avroStream.getName());
         Assert.assertEquals(avroMessage.getValue(), avroStream);
 
         // DELETE the stream
-        streamProducer.log(avroMessage.getKey(), null);
+        managedKafkaProducer.log(avroMessage.getKey(), null);
 
         Thread.sleep(TEST_SLEEP_WAIT_MS + 500);
 
         // Validate whether the stream is null in KV-Store
-        Optional<AvroStream> nullAvroStream = streamProcessor.getAvroStreamForKey(AvroStreamKey.newBuilder().setStreamName(streamName).build());
+        Optional<AvroStream> nullAvroStream = managedKStreams.getAvroStreamForKey(AvroStreamKey.newBuilder().setStreamName(streamName).build());
 
         Assert.assertEquals(Optional.empty(), nullAvroStream);
     }
@@ -106,12 +106,12 @@ public class ManagedKStreamsIT extends BaseResourceIT {
 
         // CREATE a stream
         AbstractMap.SimpleEntry<AvroStreamKey, AvroStream> avroMessage = sampleMessageBuilder.buildSampleMessage(streamName, OperationType.UPSERT);
-        streamProducer.log(avroMessage.getKey(), avroMessage.getValue());
+        managedKafkaProducer.log(avroMessage.getKey(), avroMessage.getValue());
 
         // Verify whether the stream is available in KV-Store
         Thread.sleep(TEST_SLEEP_WAIT_MS);
         // Validate whether the stream is null in KV-Store
-        Optional<AvroStream> avroStreamForKey = streamProcessor.getAvroStreamForKey(AvroStreamKey.newBuilder().setStreamName(streamName).build());
+        Optional<AvroStream> avroStreamForKey = managedKStreams.getAvroStreamForKey(AvroStreamKey.newBuilder().setStreamName(streamName).build());
         AvroStream avroStream = avroStreamForKey.get();
         Assert.assertEquals(streamName, avroStream.getName());
         Assert.assertEquals("Existing Owner value is: user-1 ","user-1", avroStream.getOwner());
@@ -120,11 +120,11 @@ public class ManagedKStreamsIT extends BaseResourceIT {
         long currentTimeMillis = System.currentTimeMillis();
         avroMessage.getValue().setOwner("user-2");
         avroMessage.getValue().setUpdated(currentTimeMillis);
-        streamProducer.log(avroMessage.getKey(), avroMessage.getValue());
+        managedKafkaProducer.log(avroMessage.getKey(), avroMessage.getValue());
 
         // Verify whether the stream owner is updated.
         Thread.sleep(TEST_SLEEP_WAIT_MS);
-        avroStreamForKey = streamProcessor.getAvroStreamForKey(AvroStreamKey.newBuilder().setStreamName(streamName).build());
+        avroStreamForKey = managedKStreams.getAvroStreamForKey(AvroStreamKey.newBuilder().setStreamName(streamName).build());
         avroStream = avroStreamForKey.get();
         Assert.assertEquals("Owner Value has been updated.","user-2", avroStream.getOwner());
         Assert.assertEquals("Message from the state store and input message are same.",avroMessage.getValue(), avroStream);

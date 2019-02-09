@@ -35,6 +35,7 @@ import com.fasterxml.jackson.datatype.guava.GuavaModule;
 import com.google.common.base.Preconditions;
 
 import io.confluent.kafka.serializers.KafkaAvroSerializer;
+import io.confluent.kafka.streams.serdes.avro.SpecificAvroSerde;
 import io.dropwizard.Application;
 import io.dropwizard.client.JerseyClientBuilder;
 import io.dropwizard.configuration.EnvironmentVariableSubstitutor;
@@ -45,7 +46,9 @@ import io.federecio.dropwizard.swagger.SwaggerBundle;
 import io.federecio.dropwizard.swagger.SwaggerBundleConfiguration;
 
 import org.apache.kafka.clients.producer.ProducerConfig;
+import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.common.utils.Utils;
+import org.apache.kafka.streams.StreamsConfig;
 import org.apache.kafka.streams.state.RocksDBConfigSetter;
 import org.rocksdb.BlockBasedTableConfig;
 import org.rocksdb.Options;
@@ -186,7 +189,12 @@ public class StreamRegistryApplication extends Application<StreamRegistryConfigu
         environment.jersey().register(new RegionResource(regionDao));
 
 
-        SourceDao sourceDao = new SourceDaoImpl(streamProperties, null);
+        Properties commonConfig = new Properties();
+        commonConfig.putAll(kstreamsProperties);
+        commonConfig.put(StreamsConfig.DEFAULT_KEY_SERDE_CLASS_CONFIG, Serdes.StringSerde.class.getName());
+        commonConfig.put(StreamsConfig.DEFAULT_VALUE_SERDE_CLASS_CONFIG, SpecificAvroSerde.class.getName());
+
+        SourceDao sourceDao = new SourceDaoImpl(commonConfig);
         SourceResource sourceResource = new SourceResource(sourceDao);
         environment.lifecycle().manage(sourceDao);
         environment.jersey().register(sourceResource);
