@@ -15,41 +15,6 @@
  */
 package com.homeaway.streamplatform.streamregistry.db.dao.impl;
 
-import static com.homeaway.streamplatform.streamregistry.model.SourceType.SOURCE_TYPES;
-
-import java.io.File;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Optional;
-import java.util.Properties;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Future;
-
-import lombok.Getter;
-import lombok.extern.slf4j.Slf4j;
-
-import io.confluent.kafka.serializers.KafkaAvroDeserializer;
-import io.confluent.kafka.serializers.KafkaAvroSerializer;
-import io.confluent.kafka.serializers.KafkaAvroSerializerConfig;
-import io.confluent.kafka.serializers.subject.TopicRecordNameStrategy;
-import io.dropwizard.lifecycle.Managed;
-
-import org.apache.kafka.clients.consumer.ConsumerConfig;
-import org.apache.kafka.clients.producer.KafkaProducer;
-import org.apache.kafka.clients.producer.ProducerConfig;
-import org.apache.kafka.clients.producer.ProducerRecord;
-import org.apache.kafka.clients.producer.RecordMetadata;
-import org.apache.kafka.common.serialization.StringDeserializer;
-import org.apache.kafka.common.serialization.StringSerializer;
-import org.apache.kafka.streams.KafkaStreams;
-import org.apache.kafka.streams.KeyValue;
-import org.apache.kafka.streams.StreamsBuilder;
-import org.apache.kafka.streams.StreamsConfig;
-import org.apache.kafka.streams.kstream.KStreamBuilder;
-import org.apache.kafka.streams.state.KeyValueIterator;
-import org.apache.kafka.streams.state.QueryableStoreTypes;
-import org.apache.kafka.streams.state.ReadOnlyKeyValueStore;
-
 import com.homeaway.digitalplatform.streamregistry.Header;
 import com.homeaway.digitalplatform.streamregistry.SourceCreateRequested;
 import com.homeaway.digitalplatform.streamregistry.SourcePauseRequested;
@@ -62,6 +27,47 @@ import com.homeaway.streamplatform.streamregistry.exceptions.SourceNotFoundExcep
 import com.homeaway.streamplatform.streamregistry.exceptions.UnsupportedSourceTypeException;
 import com.homeaway.streamplatform.streamregistry.model.Source;
 import com.homeaway.streamplatform.streamregistry.streams.KStreamsProcessorListener;
+import io.confluent.kafka.serializers.AbstractKafkaAvroSerDeConfig;
+import io.confluent.kafka.serializers.KafkaAvroDeserializer;
+import io.confluent.kafka.serializers.KafkaAvroSerializer;
+import io.confluent.kafka.serializers.KafkaAvroSerializerConfig;
+import io.confluent.kafka.serializers.subject.TopicRecordNameStrategy;
+import io.confluent.kafka.streams.serdes.avro.SpecificAvroSerde;
+import io.dropwizard.lifecycle.Managed;
+import lombok.Getter;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.producer.KafkaProducer;
+import org.apache.kafka.clients.producer.ProducerConfig;
+import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.clients.producer.RecordMetadata;
+import org.apache.kafka.common.serialization.Serde;
+import org.apache.kafka.common.serialization.Serdes;
+import org.apache.kafka.common.serialization.StringDeserializer;
+import org.apache.kafka.common.serialization.StringSerializer;
+import org.apache.kafka.common.utils.Bytes;
+import org.apache.kafka.streams.KafkaStreams;
+import org.apache.kafka.streams.KeyValue;
+import org.apache.kafka.streams.StreamsBuilder;
+import org.apache.kafka.streams.StreamsConfig;
+import org.apache.kafka.streams.kstream.GlobalKTable;
+import org.apache.kafka.streams.kstream.Materialized;
+import org.apache.kafka.streams.state.KeyValueIterator;
+import org.apache.kafka.streams.state.KeyValueStore;
+import org.apache.kafka.streams.state.QueryableStoreTypes;
+import org.apache.kafka.streams.state.ReadOnlyKeyValueStore;
+
+import java.io.File;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Properties;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
+
+import static com.homeaway.streamplatform.streamregistry.model.SourceType.SOURCE_TYPES;
 
 
 /**
@@ -95,20 +101,20 @@ public class SourceDaoImpl implements SourceDao, Managed {
     public static final String SOURCE_COMMANDS_PROCESSOR_APP_ID = "source-commands-processor-v1";
 
     public static final File SOURCE_COMMAND_EVENT_DIR = new File("/tmp/sourceCommands");
-    public static final  File SOURCE_ENTITY_EVENT_DIR = new File("/tmp/sourceEntity");
+    public static final File SOURCE_ENTITY_EVENT_DIR = new File("/tmp/sourceEntity");
 
     private final Properties commonConfig;
     private final KStreamsProcessorListener testListener;
     private boolean isRunning = false;
     private KafkaStreams sourceEntityProcessor;
     private KafkaStreams sourceCommandProcessor;
-    KafkaProducer<String, SourceCreateRequested> createRequestProducer;
-    KafkaProducer<String, SourceUpdateRequested> updateRequestProducer;
-    KafkaProducer<String, SourceStartRequested> startRequestProducer;
-    KafkaProducer<String, SourcePauseRequested> pauseRequestProducer;
-    KafkaProducer<String, SourceStopRequested> stopRequestProducer;
-    KafkaProducer<String, SourceResumeRequested> resumeRequestProducer;
-    KafkaProducer<String, Source> deleteProducer;
+    private KafkaProducer<String, SourceCreateRequested> createRequestProducer;
+    private KafkaProducer<String, SourceUpdateRequested> updateRequestProducer;
+    private KafkaProducer<String, SourceStartRequested> startRequestProducer;
+    private KafkaProducer<String, SourcePauseRequested> pauseRequestProducer;
+    private KafkaProducer<String, SourceStopRequested> stopRequestProducer;
+    private KafkaProducer<String, SourceResumeRequested> resumeRequestProducer;
+    private KafkaProducer<String, Source> deleteProducer;
 
     @Getter
     private ReadOnlyKeyValueStore<String, com.homeaway.digitalplatform.streamregistry.Source> sourceEntityStore;
@@ -144,7 +150,7 @@ public class SourceDaoImpl implements SourceDao, Managed {
         pauseRequestProducer = new KafkaProducer<>(commandProcessorConfig);
         stopRequestProducer = new KafkaProducer<>(commandProcessorConfig);
         resumeRequestProducer = new KafkaProducer<>(commandProcessorConfig);
-        deleteProducer = new KafkaProducer(commandProcessorConfig);
+        deleteProducer = new KafkaProducer<>(commandProcessorConfig);
 
     }
 
@@ -157,7 +163,7 @@ public class SourceDaoImpl implements SourceDao, Managed {
                 SourceCreateRequested.newBuilder()
                         .setHeader(Header.newBuilder().setTime(System.currentTimeMillis()).build())
                         .setSourceName(source.getSourceName())
-                        .setSource(modelToAvroSource(source, Status.NOT_RUNNING))
+                        .setSource(modelToAvroSource(source, Status.INSERTING))
                         .build());
         Future<RecordMetadata> future = createRequestProducer.send(record);
         // Wait for the message synchronously
@@ -336,12 +342,23 @@ public class SourceDaoImpl implements SourceDao, Managed {
         sourceProcessorConfig.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, KafkaAvroDeserializer.class.getName());
         sourceProcessorConfig.put(StreamsConfig.STATE_DIR_CONFIG, SOURCE_ENTITY_EVENT_DIR.getPath());
 
-        //TODO: Fix deprecated KStreamBuilder to using StreamsBuilder instead
-        KStreamBuilder kStreamBuilder = new KStreamBuilder();
+        StreamsBuilder streamsBuilder = new StreamsBuilder();
 
-        kStreamBuilder.globalTable(SOURCE_ENTITY_TOPIC_NAME, SOURCE_ENTITY_STORE_NAME);
+        final Map<String, String> serdeConfig =
+                Collections.singletonMap(AbstractKafkaAvroSerDeConfig.SCHEMA_REGISTRY_URL_CONFIG,
+                        commonConfig.getProperty(AbstractKafkaAvroSerDeConfig.SCHEMA_REGISTRY_URL_CONFIG));
 
-        sourceEntityProcessor = new KafkaStreams(kStreamBuilder, sourceProcessorConfig);
+        final Serde<com.homeaway.digitalplatform.streamregistry.Source> sourceSpecificAvroSerde = new SpecificAvroSerde<>();
+        sourceSpecificAvroSerde.configure(serdeConfig, false);
+
+
+        GlobalKTable<String, com.homeaway.digitalplatform.streamregistry.Source> sourceStore =
+                streamsBuilder.globalTable(SOURCE_ENTITY_TOPIC_NAME,
+                        Materialized.<String, com.homeaway.digitalplatform.streamregistry.Source, KeyValueStore<Bytes, byte[]>>as(SOURCE_ENTITY_STORE_NAME)
+                .withKeySerde(Serdes.String())
+                .withValueSerde(sourceSpecificAvroSerde));
+
+        sourceEntityProcessor = new KafkaStreams(streamsBuilder.build(), sourceProcessorConfig);
 
         sourceEntityProcessor.setStateListener((newState, oldState) -> {
             if (!isRunning && newState == KafkaStreams.State.RUNNING) {
@@ -356,7 +373,7 @@ public class SourceDaoImpl implements SourceDao, Managed {
         sourceEntityProcessor.start();
         log.info("Source entity processor started.");
         log.info("Source entity state Store Name: {}", SOURCE_ENTITY_STORE_NAME);
-        sourceEntityStore = sourceEntityProcessor.store(SOURCE_ENTITY_STORE_NAME, QueryableStoreTypes.keyValueStore());
+        sourceEntityStore = sourceEntityProcessor.store(sourceStore.queryableStoreName(), QueryableStoreTypes.keyValueStore());
     }
 
     private void initiateSourceCommandProcessor() {
@@ -391,6 +408,7 @@ public class SourceDaoImpl implements SourceDao, Managed {
 
     }
 
+    @SuppressWarnings("unchecked")
     private StreamsBuilder sourceCommandBuilder() {
 
         StreamsBuilder sourceCommandBuilder = new StreamsBuilder();
@@ -406,6 +424,7 @@ public class SourceDaoImpl implements SourceDao, Managed {
 
     public enum Status {
         NOT_RUNNING("NOT_RUNNING"),
+        INSERTING("INSERTING"),
         STARTING("STARTING"),
         UPDATING("UPDATING"),
         PAUSING("PAUSING"),
