@@ -15,61 +15,8 @@
  */
 package com.homeaway.streamplatform.streamregistry.streams;
 
-import java.util.Properties;
-import java.util.concurrent.Future;
+public interface ManagedKafkaProducer<K,V> {
 
-import lombok.extern.slf4j.Slf4j;
+    void log(K key, V value);
 
-import io.dropwizard.lifecycle.Managed;
-
-import org.apache.kafka.clients.producer.KafkaProducer;
-import org.apache.kafka.clients.producer.Producer;
-import org.apache.kafka.clients.producer.ProducerRecord;
-import org.apache.kafka.clients.producer.RecordMetadata;
-
-import com.homeaway.digitalplatform.streamregistry.AvroStream;
-import com.homeaway.digitalplatform.streamregistry.AvroStreamKey;
-import com.homeaway.streamplatform.streamregistry.configuration.TopicsConfig;
-
-@Slf4j
-public class ManagedKafkaProducer implements Managed {
-
-    private final TopicsConfig topicsConfig;
-    private final Properties properties;
-    private Producer<AvroStreamKey, AvroStream> producer;
-
-    public ManagedKafkaProducer(Properties properties, TopicsConfig topicsConfig) {
-        this.properties = properties;
-        this.topicsConfig = topicsConfig;
-    }
-
-    @Override
-    public void start() {
-        producer = new KafkaProducer<>(properties);
-        log.info("Managed Kafka Producer Started with properties: " + String.valueOf(properties));
-    }
-
-    @Override
-    public void stop() {
-        producer.close();
-        log.info("Manager Kafka Producer stopped.");
-    }
-
-    public void log(AvroStreamKey key, AvroStream value) {
-        try {
-            Future<RecordMetadata> result = producer.send(new ProducerRecord<>(topicsConfig.getProducerTopic(), key, value),
-                    (RecordMetadata recordMetadata, Exception e) -> {
-                        if (e != null) {
-                            log.error("Error producing to topic={}", recordMetadata.topic(), e);
-                        }
-                    });
-            // synchronously wait for the response.
-            result.get();
-        } catch (Exception exception) {
-            throw new IllegalStateException("Could not log key=" + key + " value=" + value + " to kafka",
-                    exception);
-        }
-        log.info("Message pushed to the sourceKStreamProcessorTopic Topic={} with key={} successfully",
-                topicsConfig.getProducerTopic(), String.valueOf(key));
-    }
 }

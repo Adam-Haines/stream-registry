@@ -51,11 +51,11 @@ public class ConsumerDaoImpl extends AbstractDao implements StreamClientDao<com.
     private static final String ACTOR_TYPE = "consumer";
 
     public ConsumerDaoImpl(ManagedKafkaProducer managedKafkaProducer,
-        ManagedKStreams kStreams,
-        String env,
-        RegionDao regionDao,
-        InfraManager infraManager,
-        KafkaManager kafkaManager) {
+                           ManagedKStreams kStreams,
+                           String env,
+                           RegionDao regionDao,
+                           InfraManager infraManager,
+                           KafkaManager kafkaManager) {
         super(managedKafkaProducer, kStreams, env, regionDao, infraManager, kafkaManager);
     }
 
@@ -99,7 +99,7 @@ public class ConsumerDaoImpl extends AbstractDao implements StreamClientDao<com.
                                 consumer.setActor(consumerActor);
                                 updateAvroStream(avroStream.get());
                                 log.info(
-                                    "Consumer updated in source-processor-topic. streamName={} ; consumerName={} ; consumer={} ; region={}",
+                                    "Consumer updated in source-processor-topic. stream={} ; consumerName={} ; consumer={} ; region={}",
                                     streamName, consumerName, consumer, region);
                                 return Optional.of(AvroToJsonDTO.getJsonConsumer(consumer));
                             }
@@ -155,7 +155,7 @@ public class ConsumerDaoImpl extends AbstractDao implements StreamClientDao<com.
 
     private Optional<com.homeaway.streamplatform.streamregistry.model.Consumer> getConsumer(String streamName, String consumerName) {
         // pull data from state store of this instance.
-        log.info("Pulling stream information from local instance's state-store for streamName={} ; consumerName={}", streamName,
+        log.info("Pulling stream information from local instance's state-store for stream={} ; consumerName={}", streamName,
             consumerName);
         Optional<AvroStream> streamValue = kStreams.getAvroStreamForKey(
             AvroStreamKey.newBuilder().setStreamName(streamName).build());

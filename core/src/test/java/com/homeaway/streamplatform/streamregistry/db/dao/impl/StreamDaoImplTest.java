@@ -50,7 +50,7 @@ import com.homeaway.streamplatform.streamregistry.extensions.validation.StreamVa
 import com.homeaway.streamplatform.streamregistry.model.Stream;
 import com.homeaway.streamplatform.streamregistry.provider.InfraManager;
 import com.homeaway.streamplatform.streamregistry.streams.ManagedKStreams;
-import com.homeaway.streamplatform.streamregistry.streams.ManagedKafkaProducer;
+import com.homeaway.streamplatform.streamregistry.streams.ManagedKafkaRegistryProducer;
 
 public class StreamDaoImplTest {
 
@@ -58,7 +58,7 @@ public class StreamDaoImplTest {
 
     private static final AvroStreamKey TEST_STREAM_KEY = new AvroStreamKey("test_stream");
 
-    private ManagedKafkaProducer managedKafkaProducer = mock(ManagedKafkaProducer.class);
+    private ManagedKafkaRegistryProducer streamRegistryProducer = mock(ManagedKafkaRegistryProducer.class);
     private ManagedKStreams managedKStreams = mock(ManagedKStreams.class);
     private RegionDao regionDao = mock(RegionDao.class);
     private InfraManager infraManager = mock(InfraManager.class);
@@ -70,7 +70,9 @@ public class StreamDaoImplTest {
 
     @Before
     public void setup() {
-        streamDao = new StreamDaoImpl(managedKafkaProducer, managedKStreams, TEST_ENV, regionDao, infraManager, kafkaManager, streamValidator, schemaManager);
+        streamDao = new StreamDaoImpl(streamRegistryProducer, managedKStreams,
+                TEST_ENV, regionDao, infraManager, kafkaManager,
+                streamValidator, schemaManager);
     }
 
     @Test(expected = IllegalArgumentException.class)
@@ -123,7 +125,7 @@ public class StreamDaoImplTest {
         streamDao.upsertStream(newStream);
 
         ArgumentCaptor<AvroStream> avroStreamArgumentCaptor = ArgumentCaptor.forClass(AvroStream.class);
-        verify(managedKafkaProducer).log(any(AvroStreamKey.class), avroStreamArgumentCaptor.capture());
+        verify(streamRegistryProducer).log(any(AvroStreamKey.class), avroStreamArgumentCaptor.capture());
 
         assertEquals("2", avroStreamArgumentCaptor.getValue().getLatestKeySchema().getId());
         assertEquals((long) 3, (long) avroStreamArgumentCaptor.getValue().getLatestKeySchema().getSubjectId());

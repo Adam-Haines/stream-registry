@@ -25,6 +25,7 @@ import java.util.concurrent.CompletableFuture;
 import javax.validation.Validator;
 import javax.ws.rs.client.Client;
 
+import io.confluent.kafka.streams.serdes.avro.SpecificAvroDeserializer;
 import kafka.admin.AdminUtils;
 import kafka.admin.RackAwareMode;
 import kafka.utils.ZKStringSerializer$;
@@ -40,13 +41,13 @@ import io.confluent.kafka.schemaregistry.client.CachedSchemaRegistryClient;
 import io.confluent.kafka.schemaregistry.client.SchemaRegistryClient;
 import io.confluent.kafka.serializers.AbstractKafkaAvroSerDeConfig;
 import io.confluent.kafka.serializers.KafkaAvroSerializer;
-import io.confluent.kafka.streams.serdes.avro.SpecificAvroDeserializer;
 import io.dropwizard.configuration.YamlConfigurationFactory;
 import io.dropwizard.jackson.Jackson;
 import io.dropwizard.jersey.validation.Validators;
 
 import org.I0Itec.zkclient.ZkClient;
 import org.I0Itec.zkclient.ZkConnection;
+import org.apache.commons.io.FileUtils;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.streams.StreamsConfig;
@@ -127,6 +128,8 @@ public class BaseResourceIT {
 
     protected static ManagedKafkaProducer managedKafkaProducer;
 
+    protected final static File streamsDirectory = new File("/tmp/kafka-streams");
+
     protected static StreamResource streamResource;
 
     protected static ConsumerResource consumerResource;
@@ -166,7 +169,6 @@ public class BaseResourceIT {
 
     private static final int DEFAULT_ZK_CONNECTION_TIMEOUT_MS = 8 * 1000;
 
-
     public static void createTopic(String topic, int partitions, int replication, Properties topicConfig) {
         log.debug("Creating topic { name: {}, partitions: {}, replication: {}, config: {} }",
                 topic, partitions, replication, topicConfig);
@@ -181,6 +183,9 @@ public class BaseResourceIT {
     //      - Doing so saves on build time. (#18)
     @BeforeClass
     public static void setupApplication() throws Exception {
+
+        FileUtils.deleteDirectory(streamsDirectory);
+
         // static test config setup during pre-integration-test mvn phase
         zookeeperQuorum = "127.0.0.1:21810";
         initializeZkClient();
@@ -355,5 +360,6 @@ public class BaseResourceIT {
         managedKafkaProducer.stop();
         infraManager.stop();
         ZKCLIENT.close();
+        FileUtils.deleteDirectory(streamsDirectory);
     }
 }

@@ -1,0 +1,208 @@
+@namespace("com.homeaway.digitalplatform.streamregistry")
+
+
+protocol SourceProtocol {
+
+  import idl "header.avdl";
+
+/**
+* Source schema
+*/
+  record Source {
+  /**
+  * Source header
+  */
+    Header header;
+
+  /**
+  * Name of source in the Source Store
+  */
+    string sourceName;
+
+  /**
+   * Type of source
+   */
+    string sourceType;
+
+  /**
+  * Name of the stream this source is bound to
+  */
+    string streamName;
+
+  /**
+  * Current status of the source
+  */
+    string status;
+
+  /**
+  * Any additional commonConfig as a key, value map
+  * This would be sourceType specific.
+  */
+    union{null,map<string>} imperativeConfiguration = null;
+
+  /**
+  * Any additional commonConfig as a key, value map
+  * This would be sourceType specific.
+  */
+    union{null,map<string>} tags = null;
+
+  }
+
+  record SourceCreateRequested {
+
+  /**
+  * Source header
+  */
+    Header header;
+
+  /**
+  * Name of the source
+  */
+    string sourceName;
+
+  /**
+   * Source payload
+   */
+    Source source;
+
+  }
+
+  record SourceUpdateRequested {
+
+  /**
+  * Source header
+  */
+    Header header;
+
+  /**
+  * Name of the source
+  */
+    string sourceName;
+
+  /**
+   * Source payload
+   */
+    Source source;
+
+  }
+
+  record SourceStartRequested {
+
+  /**
+  * Source header
+  */
+    Header header;
+
+  /**
+  * Name of the source
+  */
+    string sourceName;
+
+  /**
+   * Source payload
+   */
+    Source source;
+
+  }
+
+  record SourcePauseRequested {
+
+  /**
+  * Source header
+  */
+    Header header;
+
+  /**
+  * Name of the source
+  */
+    string sourceName;
+
+  /**
+  * Source payload
+  */
+    Source source;
+
+  }
+
+  record SourceResumeRequested {
+
+
+  /**
+  * Source header
+  */
+    Header header;
+
+
+  /**
+  * Name of the source
+  */
+    string sourceName;
+
+  /**
+  * Source payload
+  */
+    Source source;
+
+
+  }
+
+  record SourceStopRequested {
+
+  /**
+  * Source header
+  */
+    Header header;
+
+  /**
+  * Name of the source
+  */
+    string sourceName;
+
+  /**
+  * Source payload
+  */
+    Source source;
+
+
+  }
+
+  record SourceStopped {
+
+  /**
+  * Source header
+  */
+    Header header;
+
+  /**
+  * Name of the source
+  */
+    string sourceName;
+
+  /**
+  * Source payload
+  */
+    Source source;
+
+
+  }
+
+  record SourceDeleteRequested {
+
+  /**
+  * Source header
+  */
+    Header header;
+
+  /**
+  * Name of the source
+  */
+    string sourceName;
+
+  /**
+  * Source payload
+  */
+    Source source;
+
+
+  }
+}

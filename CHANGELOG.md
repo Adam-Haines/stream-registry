@@ -5,7 +5,8 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
 ## [0.4.7] - SNAPSHOT
-### Changed
+### Added
+- Added support for /sources
 
 ## [0.4.6] - 20190209
 ### Changed

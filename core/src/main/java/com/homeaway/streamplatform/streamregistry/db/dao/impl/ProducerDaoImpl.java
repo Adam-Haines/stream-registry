@@ -49,11 +49,11 @@ public class ProducerDaoImpl extends AbstractDao implements StreamClientDao<com.
     private final static String ACTOR_TYPE = "producer";
 
     public ProducerDaoImpl(ManagedKafkaProducer managedKafkaProducer,
-        ManagedKStreams kStreams,
-        String env,
-        RegionDao regionDao,
-        InfraManager infraManager,
-        KafkaManager kafkaManager) {
+                           ManagedKStreams kStreams,
+                           String env,
+                           RegionDao regionDao,
+                           InfraManager infraManager,
+                           KafkaManager kafkaManager) {
         super(managedKafkaProducer, kStreams, env, regionDao, infraManager, kafkaManager);
     }
 
@@ -95,7 +95,7 @@ public class ProducerDaoImpl extends AbstractDao implements StreamClientDao<com.
                                     ACTOR_TYPE, avroStream.get().getTopicConfig());
                                 producer.setActor(producerActor);
                                 updateAvroStream(avroStream.get());
-                                log.info("Producer updated in source-processor-topic. streamName={} ; producerName={} ; region={}",
+                                log.info("Producer updated in source-processor-topic. stream={} ; producerName={} ; region={}",
                                     streamName, producerName, region);
                                 return Optional.of(AvroToJsonDTO.getJsonProducer(producer));
                             }
@@ -173,7 +173,7 @@ public class ProducerDaoImpl extends AbstractDao implements StreamClientDao<com.
 
     private Optional<com.homeaway.streamplatform.streamregistry.model.Producer> getProducer(String streamName, String producerName) {
         // pull data from state store of this instance.
-        log.info("Pulling stream information from local instance's state-store for streamName={} ; producerName={}", streamName,
+        log.info("Pulling stream information from local instance's state-store for stream={} ; producerName={}", streamName,
             producerName);
         Optional<AvroStream> streamValue =
             kStreams.getAvroStreamForKey(AvroStreamKey.newBuilder().setStreamName(streamName).build());
@@ -191,7 +191,7 @@ public class ProducerDaoImpl extends AbstractDao implements StreamClientDao<com.
     private List<com.homeaway.streamplatform.streamregistry.model.Producer> getProducers(String streamName) {
         List<com.homeaway.streamplatform.streamregistry.model.Producer> producers = new ArrayList<>();
         // pull data from state store of this instance.
-        log.info("Pulling stream information from local instance's state-store for streamName={} ; managedKafkaProducer=all", streamName);
+        log.info("Pulling stream information from local instance's state-store for stream={} ; managedKafkaProducer=all", streamName);
         Optional<AvroStream> streamValue =
             kStreams.getAvroStreamForKey(AvroStreamKey.newBuilder().setStreamName(streamName).build());
         if (streamValue.isPresent() && streamValue.get().getProducers() != null) {
