@@ -50,7 +50,6 @@ public class SourceResourceIT extends BaseResourceIT {
     private static SourceDao sourceDao;
 
 
-
     @BeforeClass
     public static void setUp() throws Exception {
 

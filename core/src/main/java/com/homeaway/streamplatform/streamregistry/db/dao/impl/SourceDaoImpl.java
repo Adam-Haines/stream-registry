@@ -138,20 +138,6 @@ public class SourceDaoImpl implements SourceDao, Managed {
 
         this.commonConfig = commonConfig;
         this.testListener = testListener;
-
-        Properties commandProcessorConfig = new Properties();
-        commonConfig.forEach(commandProcessorConfig::put);
-        commandProcessorConfig.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
-        commandProcessorConfig.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, KafkaAvroSerializer.class.getName());
-        commandProcessorConfig.put(KafkaAvroSerializerConfig.VALUE_SUBJECT_NAME_STRATEGY, TopicRecordNameStrategy.class.getName());
-        createRequestProducer = new KafkaProducer<>(commandProcessorConfig);
-        updateRequestProducer = new KafkaProducer<>(commandProcessorConfig);
-        startRequestProducer = new KafkaProducer<>(commandProcessorConfig);
-        pauseRequestProducer = new KafkaProducer<>(commandProcessorConfig);
-        stopRequestProducer = new KafkaProducer<>(commandProcessorConfig);
-        resumeRequestProducer = new KafkaProducer<>(commandProcessorConfig);
-        deleteProducer = new KafkaProducer<>(commandProcessorConfig);
-
     }
 
     @Override
@@ -169,6 +155,7 @@ public class SourceDaoImpl implements SourceDao, Managed {
         // Wait for the message synchronously
         try {
             future.get();
+            log.info("inserting - {}", source.getSourceName());
         } catch (InterruptedException | ExecutionException e) {
             log.error("Error producing message", e);
         }
@@ -190,12 +177,13 @@ public class SourceDaoImpl implements SourceDao, Managed {
                 SourceUpdateRequested.newBuilder()
                         .setHeader(Header.newBuilder().setTime(System.currentTimeMillis()).build())
                         .setSourceName(source.getSourceName())
-                        .setSource(modelToAvroSource(source, Status.NOT_RUNNING))
+                        .setSource(modelToAvroSource(source, Status.UPDATING))
                         .build());
         Future<RecordMetadata> future = updateRequestProducer.send(record);
         // Wait for the message synchronously
         try {
             future.get();
+            log.info("updating - {}", source.getSourceName());
         } catch (InterruptedException | ExecutionException e) {
             log.error("Error producing message", e);
         }
@@ -215,12 +203,13 @@ public class SourceDaoImpl implements SourceDao, Managed {
                     SourceStartRequested.newBuilder()
                             .setHeader(Header.newBuilder().setTime(System.currentTimeMillis()).build())
                             .setSourceName(source.get().getSourceName())
-                            .setSource(modelToAvroSource(source.get(), Status.NOT_RUNNING))
+                            .setSource(modelToAvroSource(source.get(), Status.STARTING))
                             .build());
             Future<RecordMetadata> future = startRequestProducer.send(record);
             // Wait for the message synchronously
             try {
                 future.get();
+                log.info("starting - {}", sourceName);
             } catch (InterruptedException | ExecutionException e) {
                 log.error("Error producing message", e);
             }
@@ -238,12 +227,13 @@ public class SourceDaoImpl implements SourceDao, Managed {
                     SourcePauseRequested.newBuilder()
                             .setHeader(Header.newBuilder().setTime(System.currentTimeMillis()).build())
                             .setSourceName(source.get().getSourceName())
-                            .setSource(modelToAvroSource(source.get(), Status.NOT_RUNNING))
+                            .setSource(modelToAvroSource(source.get(), Status.PAUSING))
                             .build());
             Future<RecordMetadata> future = pauseRequestProducer.send(record);
             // Wait for the message synchronously
             try {
                 future.get();
+                log.info("pausing - {}", sourceName);
             } catch (InterruptedException | ExecutionException e) {
                 log.error("Error producing message", e);
             }
@@ -261,12 +251,13 @@ public class SourceDaoImpl implements SourceDao, Managed {
                     SourceResumeRequested.newBuilder()
                             .setHeader(Header.newBuilder().setTime(System.currentTimeMillis()).build())
                             .setSourceName(source.get().getSourceName())
-                            .setSource(modelToAvroSource(source.get(), Status.NOT_RUNNING))
+                            .setSource(modelToAvroSource(source.get(), Status.RESUMING))
                             .build());
             Future<RecordMetadata> future = resumeRequestProducer.send(record);
             // Wait for the message synchronously
             try {
                 future.get();
+                log.info("resuming - {}", sourceName);
             } catch (InterruptedException | ExecutionException e) {
                 log.error("Error producing message", e);
             }
@@ -283,12 +274,13 @@ public class SourceDaoImpl implements SourceDao, Managed {
                     SourceStopRequested.newBuilder()
                             .setHeader(Header.newBuilder().setTime(System.currentTimeMillis()).build())
                             .setSourceName(source.get().getSourceName())
-                            .setSource(modelToAvroSource(source.get(), Status.NOT_RUNNING))
+                            .setSource(modelToAvroSource(source.get(), Status.STOPPING))
                             .build());
             Future<RecordMetadata> future = stopRequestProducer.send(record);
             // Wait for the message synchronously
             try {
                 future.get();
+                log.info("stopping - {}", sourceName);
             } catch (InterruptedException | ExecutionException e) {
                 log.error("Error producing message", e);
             }
@@ -315,6 +307,7 @@ public class SourceDaoImpl implements SourceDao, Managed {
         // Wait for the message synchronously
         try {
             future.get();
+            log.info("deleting - {}", sourceName);
         } catch (InterruptedException | ExecutionException e) {
             log.error("Error producing message", e);
         }
@@ -371,7 +364,7 @@ public class SourceDaoImpl implements SourceDao, Managed {
 
         sourceEntityProcessor.setUncaughtExceptionHandler((t, e) -> log.error("Source entity processor job failed", e));
         sourceEntityProcessor.start();
-        log.info("Source entity processor started.");
+        log.info("Source entity processor started with properties - {}", sourceProcessorConfig);
         log.info("Source entity state Store Name: {}", SOURCE_ENTITY_STORE_NAME);
         sourceEntityStore = sourceEntityProcessor.store(sourceStore.queryableStoreName(), QueryableStoreTypes.keyValueStore());
     }
@@ -404,7 +397,7 @@ public class SourceDaoImpl implements SourceDao, Managed {
 
         sourceCommandProcessor.setUncaughtExceptionHandler((t, e) -> log.error("Source command processor job failed", e));
         sourceCommandProcessor.start();
-        log.info("Source commands processor job started.");
+        log.info("Source commands processor job started with properties - {}", commandProcessorConfig);
 
     }
 
@@ -462,6 +455,23 @@ public class SourceDaoImpl implements SourceDao, Managed {
     public void start() {
         initiateSourceEntityProcessor();
         initiateSourceCommandProcessor();
+
+
+        Properties commandProcessorConfig = new Properties();
+        commonConfig.forEach(commandProcessorConfig::put);
+        commandProcessorConfig.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
+        commandProcessorConfig.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, KafkaAvroSerializer.class.getName());
+        commandProcessorConfig.put(KafkaAvroSerializerConfig.VALUE_SUBJECT_NAME_STRATEGY, TopicRecordNameStrategy.class.getName());
+
+        createRequestProducer = new KafkaProducer<>(commandProcessorConfig);
+        updateRequestProducer = new KafkaProducer<>(commandProcessorConfig);
+        startRequestProducer = new KafkaProducer<>(commandProcessorConfig);
+        pauseRequestProducer = new KafkaProducer<>(commandProcessorConfig);
+        stopRequestProducer = new KafkaProducer<>(commandProcessorConfig);
+        resumeRequestProducer = new KafkaProducer<>(commandProcessorConfig);
+        deleteProducer = new KafkaProducer<>(commandProcessorConfig);
+
+        log.info("All the producers were initiated with the following common configuration - {}", commandProcessorConfig);
     }
 
 
@@ -512,12 +522,12 @@ public class SourceDaoImpl implements SourceDao, Managed {
             if (entity instanceof SourceCreateRequested) {
                 return setNewStatus(((SourceCreateRequested) entity)
                         .getSource(), Status.NOT_RUNNING);
-            } else if (entity instanceof SourceStartRequested) {
-                return setNewStatus(((SourceStartRequested) entity)
-                        .getSource(), Status.STARTING);
             } else if (entity instanceof SourceUpdateRequested) {
                 return setNewStatus(((SourceUpdateRequested) entity)
                         .getSource(), Status.UPDATING);
+            } else if (entity instanceof SourceStartRequested) {
+                return setNewStatus(((SourceStartRequested) entity)
+                        .getSource(), Status.STARTING);
             } else if (entity instanceof SourcePauseRequested) {
                 return setNewStatus(((SourcePauseRequested) entity)
                         .getSource(), Status.PAUSING);
