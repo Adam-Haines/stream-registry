@@ -29,14 +29,6 @@ public class TopicsConfig {
 
     @Valid
     @NotNull
-    String producerStateStore;
-
-    @Valid
-    @NotNull
-    String streamSourceTopic;
-
-    @Valid
-    @NotNull
-    String streamSourceStateStore;
+    String stateStoreName;
 
 }

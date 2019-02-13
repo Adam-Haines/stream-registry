@@ -23,6 +23,10 @@ import java.util.Optional;
 import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
 
+import lombok.extern.slf4j.Slf4j;
+
+import com.google.common.base.Preconditions;
+
 import io.confluent.kafka.serializers.AbstractKafkaAvroSerDeConfig;
 import io.confluent.kafka.streams.serdes.avro.SpecificAvroSerde;
 
@@ -37,12 +41,13 @@ import org.junit.Test;
 import com.homeaway.streamplatform.streamregistry.db.dao.SourceDao;
 import com.homeaway.streamplatform.streamregistry.db.dao.impl.SourceDaoImpl;
 import com.homeaway.streamplatform.streamregistry.model.Source;
+import com.homeaway.streamplatform.streamregistry.model.SourceType;
 
-public class SourceResourceIT extends BaseResourceIT {
+@Slf4j
+public class SourceDaoImplIT extends BaseResourceIT {
 
-    // SourceImpl has a lot many processors.
     // Takes longer for messages to show up in the consumer.
-    public static final int SOURCE_WAIT_TIME_MS = 4000;
+    public static final int SOURCE_WAIT_TIME_MS = 3000;
 
 
     public static Properties commonConfig;
@@ -67,6 +72,17 @@ public class SourceResourceIT extends BaseResourceIT {
         CompletableFuture<Boolean> initialized = new CompletableFuture<>();
         sourceDao = new SourceDaoImpl(commonConfig,  () -> initialized.complete(true));
         sourceDao.start();
+
+        log.info(
+                "Waiting for processor's init method to be called (KV store created) before servicing the HTTP requests.");
+        long timeoutTimestamp = System.currentTimeMillis() + TEST_STARTUP_TIMEOUT_MS;
+        while (!initialized.isDone() && System.currentTimeMillis() <= timeoutTimestamp) {
+            Thread.sleep(10); // wait some cycles before checking again
+        }
+        Preconditions.checkState(initialized.isDone(), "Did not receive state store initialized signal, aborting.");
+        Preconditions.checkState(managedKStreams.getStreams().state().isRunning(), "State store did not start. Aborting.");
+        log.info("Processor wait completed.");
+
     }
 
     @Test
@@ -79,10 +95,11 @@ public class SourceResourceIT extends BaseResourceIT {
 
         Source source = buildSource(sourceName, streamName, null);
 
+        // inserting
         sourceDao.insert(source);
 
-        // Seems to need longer time. Have more things to setup
-        Thread.sleep(SOURCE_WAIT_TIME_MS);
+        Thread.sleep(SOURCE_WAIT_TIME_MS + 5000);
+        log.info("waited - {} seconds", SOURCE_WAIT_TIME_MS);
 
         Optional<Source> optionalSource = sourceDao.get(sourceName);
 
@@ -93,27 +110,47 @@ public class SourceResourceIT extends BaseResourceIT {
 
         Assert.assertThat(sourceDao.getStatus(sourceName), is("NOT_RUNNING"));
 
+
+        // updating
+        sourceDao.update(source);
+
+        Thread.sleep(SOURCE_WAIT_TIME_MS);
+        log.info("waited - {} seconds", SOURCE_WAIT_TIME_MS);
+
+        Assert.assertThat(sourceDao.getStatus(sourceName), is("UPDATING"));
+
+
+        // starting
         sourceDao.start(sourceName);
 
         Thread.sleep(SOURCE_WAIT_TIME_MS);
 
-        Assert.assertThat(sourceDao.getStatus(sourceName), is("STARTING"));
+        String startStatus = sourceDao.getStatus(sourceName);
+        Assert.assertThat(startStatus, is("STARTING"));
+        log.info("Start status - {}", startStatus);
 
+
+        // pausing
         sourceDao.pause(sourceName);
 
         Thread.sleep(SOURCE_WAIT_TIME_MS);
+        log.info("waited - {} seconds", SOURCE_WAIT_TIME_MS);
 
         Assert.assertThat(sourceDao.getStatus(sourceName), is("PAUSING"));
 
+        // resuming
         sourceDao.resume(sourceName);
 
         Thread.sleep(SOURCE_WAIT_TIME_MS);
+        log.info("waited - {} seconds", SOURCE_WAIT_TIME_MS);
 
         Assert.assertThat(sourceDao.getStatus(sourceName), is("RESUMING"));
 
+        // stopping
         sourceDao.stop(sourceName);
 
         Thread.sleep(SOURCE_WAIT_TIME_MS);
+        log.info("waited - {} seconds", SOURCE_WAIT_TIME_MS);
 
         Assert.assertThat(sourceDao.getStatus(sourceName), is("STOPPING"));
     }
@@ -126,7 +163,7 @@ public class SourceResourceIT extends BaseResourceIT {
         return Source.builder()
                 .sourceName(sourceName)
                 .streamName(streamName)
-                .sourceType("kinesis")
+                .sourceType(SourceType.SOURCE_TYPES.get(0))
                 .status(status)
                 .imperativeConfiguration(map)
                 .tags(map)
