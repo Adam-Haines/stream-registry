@@ -72,11 +72,14 @@ import com.homeaway.streamplatform.streamregistry.exceptions.UnsupportedSourceTy
 import com.homeaway.streamplatform.streamregistry.model.Source;
 import com.homeaway.streamplatform.streamregistry.streams.KStreamsProcessorListener;
 
+import javax.inject.Singleton;
+
 
 /**
  * KStreams event processor implementation of the SourceDao
  * All calls to this Dao represent asynchronous/eventually consistent actions.
  */
+@Singleton
 @Slf4j
 public class SourceDaoImpl implements SourceDao, Managed {
 
@@ -109,7 +112,10 @@ public class SourceDaoImpl implements SourceDao, Managed {
     private final Properties commonConfig;
     private final KStreamsProcessorListener testListener;
     private boolean isRunning = false;
+
+    @Getter
     private KafkaStreams sourceEntityProcessor;
+
     private KafkaStreams sourceCommandProcessor;
     private KafkaProducer<String, SourceCreateRequested> createRequestProducer;
     private KafkaProducer<String, SourceUpdateRequested> updateRequestProducer;
@@ -138,7 +144,6 @@ public class SourceDaoImpl implements SourceDao, Managed {
      * @param testListener the test listener
      */
     public SourceDaoImpl(Properties commonConfig, KStreamsProcessorListener testListener) {
-
         this.commonConfig = commonConfig;
         this.testListener = testListener;
     }
@@ -146,13 +151,13 @@ public class SourceDaoImpl implements SourceDao, Managed {
     @Override
     public void insert(Source source) {
 
-        getSupportedSourceType(source);
+        validateSourceIsSupported(source);
 
         ProducerRecord<String, SourceCreateRequested> record = new ProducerRecord<>(SOURCE_COMMANDS_TOPIC, source.getSourceName(),
                 SourceCreateRequested.newBuilder()
                         .setHeader(Header.newBuilder().setTime(System.currentTimeMillis()).build())
                         .setSourceName(source.getSourceName())
-                        .setSource(modelToAvroSource(source, Status.INSERTING))
+                        .setSource(modelToAvroSource(source, Status.NOT_RUNNING))
                         .build());
         Future<RecordMetadata> future = createRequestProducer.send(record);
         // Wait for the message synchronously
@@ -164,7 +169,7 @@ public class SourceDaoImpl implements SourceDao, Managed {
         }
     }
 
-    private void getSupportedSourceType(Source source) {
+    private void validateSourceIsSupported(Source source) {
         boolean supportedSource = SOURCE_TYPES.stream()
                 .anyMatch(sourceType -> sourceType.equalsIgnoreCase(source.getSourceType()));
 
@@ -180,9 +185,10 @@ public class SourceDaoImpl implements SourceDao, Managed {
                 SourceUpdateRequested.newBuilder()
                         .setHeader(Header.newBuilder().setTime(System.currentTimeMillis()).build())
                         .setSourceName(source.getSourceName())
-                        .setSource(modelToAvroSource(source, Status.UPDATING))
+                        .setSource(modelToAvroSource(source, Status.NOT_RUNNING))
                         .build());
         Future<RecordMetadata> future = updateRequestProducer.send(record);
+        updateRequestProducer.flush();
         // Wait for the message synchronously
         try {
             future.get();
@@ -206,9 +212,10 @@ public class SourceDaoImpl implements SourceDao, Managed {
                     SourceStartRequested.newBuilder()
                             .setHeader(Header.newBuilder().setTime(System.currentTimeMillis()).build())
                             .setSourceName(source.get().getSourceName())
-                            .setSource(modelToAvroSource(source.get(), Status.STARTING))
                             .build());
             Future<RecordMetadata> future = startRequestProducer.send(record);
+            startRequestProducer.flush();
+
             // Wait for the message synchronously
             try {
                 future.get();
@@ -230,9 +237,10 @@ public class SourceDaoImpl implements SourceDao, Managed {
                     SourcePauseRequested.newBuilder()
                             .setHeader(Header.newBuilder().setTime(System.currentTimeMillis()).build())
                             .setSourceName(source.get().getSourceName())
-                            .setSource(modelToAvroSource(source.get(), Status.PAUSING))
                             .build());
             Future<RecordMetadata> future = pauseRequestProducer.send(record);
+            pauseRequestProducer.flush();
+
             // Wait for the message synchronously
             try {
                 future.get();
@@ -254,9 +262,9 @@ public class SourceDaoImpl implements SourceDao, Managed {
                     SourceResumeRequested.newBuilder()
                             .setHeader(Header.newBuilder().setTime(System.currentTimeMillis()).build())
                             .setSourceName(source.get().getSourceName())
-                            .setSource(modelToAvroSource(source.get(), Status.RESUMING))
                             .build());
             Future<RecordMetadata> future = resumeRequestProducer.send(record);
+            resumeRequestProducer.flush();
             // Wait for the message synchronously
             try {
                 future.get();
@@ -277,9 +285,9 @@ public class SourceDaoImpl implements SourceDao, Managed {
                     SourceStopRequested.newBuilder()
                             .setHeader(Header.newBuilder().setTime(System.currentTimeMillis()).build())
                             .setSourceName(source.get().getSourceName())
-                            .setSource(modelToAvroSource(source.get(), Status.STOPPING))
                             .build());
             Future<RecordMetadata> future = stopRequestProducer.send(record);
+            stopRequestProducer.flush();
             // Wait for the message synchronously
             try {
                 future.get();
@@ -307,6 +315,9 @@ public class SourceDaoImpl implements SourceDao, Managed {
     public void delete(String sourceName) {
         ProducerRecord<String, Source> record = new ProducerRecord<>(SOURCE_ENTITY_TOPIC_NAME, sourceName, null);
         Future<RecordMetadata> future = deleteProducer.send(record);
+
+        deleteProducer.flush();
+
         // Wait for the message synchronously
         try {
             future.get();
@@ -337,6 +348,7 @@ public class SourceDaoImpl implements SourceDao, Managed {
         sourceProcessorConfig.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
         sourceProcessorConfig.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, KafkaAvroDeserializer.class.getName());
         sourceProcessorConfig.put(StreamsConfig.STATE_DIR_CONFIG, SOURCE_ENTITY_EVENT_DIR.getPath());
+        sourceProcessorConfig.put(ConsumerConfig.AUTO_COMMIT_INTERVAL_MS_CONFIG, 100);
 
         StreamsBuilder streamsBuilder = new StreamsBuilder();
 
@@ -385,19 +397,12 @@ public class SourceDaoImpl implements SourceDao, Managed {
         commandProcessorConfig.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, KafkaAvroDeserializer.class.getName());
         commandProcessorConfig.put(StreamsConfig.APPLICATION_ID_CONFIG, SOURCE_COMMANDS_PROCESSOR_APP_ID);
         commandProcessorConfig.put(StreamsConfig.STATE_DIR_CONFIG, SOURCE_COMMAND_EVENT_DIR.getPath());
+        commandProcessorConfig.put(ConsumerConfig.AUTO_COMMIT_INTERVAL_MS_CONFIG, 100);
+
 
         sourceCommandBuilder();
 
         sourceCommandProcessor = new KafkaStreams(sourceCommandBuilder().build(), commandProcessorConfig);
-        sourceCommandProcessor.setStateListener((newState, oldState) -> {
-            if (!isRunning && newState == KafkaStreams.State.RUNNING) {
-                isRunning = true;
-                if (testListener != null) {
-                    testListener.stateStoreInitialized();
-                }
-            }
-        });
-
         sourceCommandProcessor.setUncaughtExceptionHandler((t, e) -> log.error("Source command processor job failed", e));
         sourceCommandProcessor.start();
         log.info("Source commands processor job started with properties - {}", commandProcessorConfig);
@@ -442,7 +447,7 @@ public class SourceDaoImpl implements SourceDao, Managed {
         }
     }
 
-    private KeyValue<String, com.homeaway.digitalplatform.streamregistry.Source> setNewStatus(com.homeaway.digitalplatform.streamregistry.Source source, Status status) {
+    private KeyValue<String, com.homeaway.digitalplatform.streamregistry.Source> getNewAvroEntity(com.homeaway.digitalplatform.streamregistry.Source source, Status status) {
         return new KeyValue<>(source.getSourceName(), com.homeaway.digitalplatform.streamregistry.Source.newBuilder()
                 .setHeader(Header.newBuilder().setTime(System.currentTimeMillis()).build())
                 .setSourceName(source.getSourceName())
@@ -452,6 +457,27 @@ public class SourceDaoImpl implements SourceDao, Managed {
                 .setImperativeConfiguration(source.getImperativeConfiguration())
                 .setTags(source.getTags())
                 .build());
+    }
+
+    private KeyValue<String, com.homeaway.digitalplatform.streamregistry.Source> getNewAvroEntityForExistingSource(String sourceName, Status status) {
+
+        Optional<Source> optionalExistingSource = get(sourceName);
+
+        if (optionalExistingSource.isPresent()) {
+
+            Source existingSource = optionalExistingSource.get();
+
+            return new KeyValue<>(sourceName, com.homeaway.digitalplatform.streamregistry.Source.newBuilder()
+                    .setHeader(Header.newBuilder().setTime(System.currentTimeMillis()).build())
+                    .setSourceName(sourceName)
+                    .setStreamName(existingSource.getStreamName())
+                    .setSourceType(existingSource.getSourceType())
+                    .setStatus(status.toString())
+                    .setImperativeConfiguration(existingSource.getImperativeConfiguration())
+                    .setTags(existingSource.getTags())
+                    .build());
+        }
+        return null;
     }
 
     @Override
@@ -523,23 +549,23 @@ public class SourceDaoImpl implements SourceDao, Managed {
 
         KeyValue process(V entity) {
             if (entity instanceof SourceCreateRequested) {
-                return setNewStatus(((SourceCreateRequested) entity)
-                        .getSource(), Status.NOT_RUNNING);
+                return getNewAvroEntity(((SourceCreateRequested) entity).getSource(),
+                        Status.NOT_RUNNING);
             } else if (entity instanceof SourceUpdateRequested) {
-                return setNewStatus(((SourceUpdateRequested) entity)
-                        .getSource(), Status.UPDATING);
+                return getNewAvroEntity(((SourceUpdateRequested) entity).getSource(),
+                        Status.UPDATING);
             } else if (entity instanceof SourceStartRequested) {
-                return setNewStatus(((SourceStartRequested) entity)
-                        .getSource(), Status.STARTING);
+                return getNewAvroEntityForExistingSource(((SourceStartRequested) entity)
+                        .getSourceName(), Status.STARTING);
             } else if (entity instanceof SourcePauseRequested) {
-                return setNewStatus(((SourcePauseRequested) entity)
-                        .getSource(), Status.PAUSING);
+                return getNewAvroEntityForExistingSource(((SourcePauseRequested) entity).getSourceName(),
+                        Status.PAUSING);
             } else if (entity instanceof SourceResumeRequested) {
-                return setNewStatus(((SourceResumeRequested) entity)
-                        .getSource(), Status.RESUMING);
+                return getNewAvroEntityForExistingSource(((SourceResumeRequested) entity).getSourceName(),
+                        Status.RESUMING);
             } else if (entity instanceof SourceStopRequested) {
-                return setNewStatus(((SourceStopRequested) entity)
-                        .getSource(), Status.STOPPING);
+                return getNewAvroEntityForExistingSource(((SourceStopRequested) entity).getSourceName(),
+                        Status.STOPPING);
             }
             return null;
         }

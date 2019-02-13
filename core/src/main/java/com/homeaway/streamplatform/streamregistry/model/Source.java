@@ -20,16 +20,10 @@ import java.util.Map;
 import javax.annotation.Nullable;
 import javax.validation.constraints.NotNull;
 
-import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
-import lombok.NoArgsConstructor;
 import lombok.ToString;
 
-@AllArgsConstructor
-@NoArgsConstructor
-@Builder
-@Data
 /**
  * Source is registered to a stream and determines the origin
  * of events for this stream.
@@ -37,6 +31,8 @@ import lombok.ToString;
  * It enables clients of Stream registry to easily register a new source
  * that's supported by Stream registry through {@link SourceType}
  */
+@Builder
+@Data
 public class Source {
 
     /**
@@ -60,6 +56,7 @@ public class Source {
     /**
      * Current status of the source
      */
+    @Nullable
     private String status;
 
     /**
@@ -79,8 +76,8 @@ public class Source {
     /**
      * Milliseconds since the epoc for source creation
      */
-    @Nullable
     @ToString.Exclude
-    private long created;
+    @Builder.Default
+    private long created = 0;
 
 }

@@ -98,11 +98,6 @@ protocol SourceProtocol {
   */
     string sourceName;
 
-  /**
-   * Source payload
-   */
-    Source source;
-
   }
 
   record SourcePauseRequested {
@@ -116,11 +111,6 @@ protocol SourceProtocol {
   * Name of the source
   */
     string sourceName;
-
-  /**
-  * Source payload
-  */
-    Source source;
 
   }
 
@@ -138,12 +128,6 @@ protocol SourceProtocol {
   */
     string sourceName;
 
-  /**
-  * Source payload
-  */
-    Source source;
-
-
   }
 
   record SourceStopRequested {
@@ -157,11 +141,6 @@ protocol SourceProtocol {
   * Name of the source
   */
     string sourceName;
-
-  /**
-  * Source payload
-  */
-    Source source;
 
 
   }
@@ -178,11 +157,6 @@ protocol SourceProtocol {
   */
     string sourceName;
 
-  /**
-  * Source payload
-  */
-    Source source;
-
 
   }
 
@@ -197,12 +171,6 @@ protocol SourceProtocol {
   * Name of the source
   */
     string sourceName;
-
-  /**
-  * Source payload
-  */
-    Source source;
-
 
   }
 }

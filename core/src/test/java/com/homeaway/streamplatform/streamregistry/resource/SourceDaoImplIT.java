@@ -15,14 +15,24 @@
  */
 package com.homeaway.streamplatform.streamregistry.resource;
 
+import static com.homeaway.streamplatform.streamregistry.db.dao.impl.SourceDaoImpl.SOURCE_ENTITY_EVENT_DIR;
+import static com.homeaway.streamplatform.streamregistry.db.dao.impl.SourceDaoImpl.SOURCE_ENTITY_PROCESSOR_APP_ID;
+import static com.homeaway.streamplatform.streamregistry.db.dao.impl.SourceDaoImpl.SOURCE_ENTITY_TOPIC_NAME;
+import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.core.Is.is;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
 
+import com.homeaway.streamplatform.streamregistry.utils.IntegrationTestUtils;
+import io.confluent.kafka.serializers.KafkaAvroDeserializer;
+import io.confluent.kafka.serializers.KafkaAvroSerializer;
+import io.confluent.kafka.serializers.KafkaAvroSerializerConfig;
+import io.confluent.kafka.serializers.subject.TopicRecordNameStrategy;
 import lombok.extern.slf4j.Slf4j;
 
 import com.google.common.base.Preconditions;
@@ -32,13 +42,18 @@ import io.confluent.kafka.streams.serdes.avro.SpecificAvroSerde;
 
 import org.apache.commons.io.FileUtils;
 import org.apache.kafka.clients.CommonClientConfigs;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.producer.ProducerConfig;
+import org.apache.kafka.common.serialization.LongDeserializer;
 import org.apache.kafka.common.serialization.Serdes;
+import org.apache.kafka.common.serialization.StringDeserializer;
+import org.apache.kafka.common.serialization.StringSerializer;
+import org.apache.kafka.streams.KeyValue;
 import org.apache.kafka.streams.StreamsConfig;
 import org.junit.Assert;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
-import com.homeaway.streamplatform.streamregistry.db.dao.SourceDao;
 import com.homeaway.streamplatform.streamregistry.db.dao.impl.SourceDaoImpl;
 import com.homeaway.streamplatform.streamregistry.model.Source;
 import com.homeaway.streamplatform.streamregistry.model.SourceType;
@@ -46,13 +61,12 @@ import com.homeaway.streamplatform.streamregistry.model.SourceType;
 @Slf4j
 public class SourceDaoImplIT extends BaseResourceIT {
 
-    // Takes longer for messages to show up in the consumer.
-    public static final int SOURCE_WAIT_TIME_MS = 3000;
-
 
     public static Properties commonConfig;
 
-    private static SourceDao sourceDao;
+    public static Properties sourceProcessorConfig;
+
+    private static SourceDaoImpl sourceDao;
 
 
     @BeforeClass
@@ -61,7 +75,7 @@ public class SourceDaoImplIT extends BaseResourceIT {
         // Make sure all temp dirs are cleaned first
         // This will solve a lot of the dir locked issue etc.
         FileUtils.deleteDirectory(SourceDaoImpl.SOURCE_COMMAND_EVENT_DIR);
-        FileUtils.deleteDirectory(SourceDaoImpl.SOURCE_ENTITY_EVENT_DIR);
+        FileUtils.deleteDirectory(SOURCE_ENTITY_EVENT_DIR);
 
         commonConfig = new Properties();
         commonConfig.put(CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
@@ -69,18 +83,34 @@ public class SourceDaoImplIT extends BaseResourceIT {
         commonConfig.put(StreamsConfig.DEFAULT_KEY_SERDE_CLASS_CONFIG, Serdes.StringSerde.class.getName());
         commonConfig.put(StreamsConfig.DEFAULT_VALUE_SERDE_CLASS_CONFIG, SpecificAvroSerde.class.getName());
 
+
+        sourceProcessorConfig = new Properties();
+        sourceProcessorConfig.put(CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
+        sourceProcessorConfig.put(AbstractKafkaAvroSerDeConfig.SCHEMA_REGISTRY_URL_CONFIG, schemaRegistryURL);
+        sourceProcessorConfig.put(ConsumerConfig.GROUP_ID_CONFIG, SOURCE_ENTITY_PROCESSOR_APP_ID + "_consumer");
+        sourceProcessorConfig.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
+        sourceProcessorConfig.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, KafkaAvroSerializer.class.getName());
+        sourceProcessorConfig.put(KafkaAvroSerializerConfig.VALUE_SUBJECT_NAME_STRATEGY, TopicRecordNameStrategy.class.getName());
+        sourceProcessorConfig.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
+        sourceProcessorConfig.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, KafkaAvroDeserializer.class.getName());
+        sourceProcessorConfig.put(StreamsConfig.STATE_DIR_CONFIG, SOURCE_ENTITY_EVENT_DIR.getPath());
+        sourceProcessorConfig.put(ConsumerConfig.AUTO_COMMIT_INTERVAL_MS_CONFIG, 100);
+
         CompletableFuture<Boolean> initialized = new CompletableFuture<>();
-        sourceDao = new SourceDaoImpl(commonConfig,  () -> initialized.complete(true));
+        sourceDao = new SourceDaoImpl(commonConfig, () -> initialized.complete(true));
         sourceDao.start();
 
         log.info(
                 "Waiting for processor's init method to be called (KV store created) before servicing the HTTP requests.");
+
+
+
         long timeoutTimestamp = System.currentTimeMillis() + TEST_STARTUP_TIMEOUT_MS;
         while (!initialized.isDone() && System.currentTimeMillis() <= timeoutTimestamp) {
-            Thread.sleep(10); // wait some cycles before checking again
+            Thread.sleep(100); // wait some cycles before checking again
         }
         Preconditions.checkState(initialized.isDone(), "Did not receive state store initialized signal, aborting.");
-        Preconditions.checkState(managedKStreams.getStreams().state().isRunning(), "State store did not start. Aborting.");
+        Preconditions.checkState(sourceDao.getSourceEntityProcessor().state().isRunning(), "State store did not start. Aborting.");
         log.info("Processor wait completed.");
 
     }
@@ -97,62 +127,42 @@ public class SourceDaoImplIT extends BaseResourceIT {
 
         // inserting
         sourceDao.insert(source);
-
-        Thread.sleep(SOURCE_WAIT_TIME_MS + 5000);
-        log.info("waited - {} seconds", SOURCE_WAIT_TIME_MS);
-
-        Optional<Source> optionalSource = sourceDao.get(sourceName);
-
-        Assert.assertThat(optionalSource.isPresent(), is(true));
-
-        Assert.assertThat("Get source should return the source that was inserted",
-                optionalSource.get().toString() , is(buildSource(sourceName, streamName, "NOT_RUNNING").toString()));
-
-        Assert.assertThat(sourceDao.getStatus(sourceName), is("NOT_RUNNING"));
-
-
         // updating
         sourceDao.update(source);
 
-        Thread.sleep(SOURCE_WAIT_TIME_MS);
-        log.info("waited - {} seconds", SOURCE_WAIT_TIME_MS);
 
-        Assert.assertThat(sourceDao.getStatus(sourceName), is("UPDATING"));
+        consumerConfig.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
+        consumerConfig.put(ConsumerConfig.GROUP_ID_CONFIG, "state-store-dsl-consumer");
+        consumerConfig.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+        consumerConfig.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
+        consumerConfig.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, KafkaAvroDeserializer.class.getName());
+
+        List<KeyValue<String, com.homeaway.digitalplatform.streamregistry.Source>> list = IntegrationTestUtils.readKeyValues(SOURCE_ENTITY_TOPIC_NAME, consumerConfig);
+        Assert.assertThat(list.size(), greaterThan(0));
 
 
-        // starting
+//        // starting
+//        Thread.sleep(1000L);
         sourceDao.start(sourceName);
+        Assert.assertThat(list.size(), greaterThan(2));
 
-        Thread.sleep(SOURCE_WAIT_TIME_MS);
-
-        String startStatus = sourceDao.getStatus(sourceName);
-        Assert.assertThat(startStatus, is("STARTING"));
-        log.info("Start status - {}", startStatus);
-
-
-        // pausing
+//        // pausing
+//        Thread.sleep(1000L);
         sourceDao.pause(sourceName);
+        Assert.assertThat(list.size(), greaterThan(3));
 
-        Thread.sleep(SOURCE_WAIT_TIME_MS);
-        log.info("waited - {} seconds", SOURCE_WAIT_TIME_MS);
+//        // resuming
+//        Thread.sleep(1000L);
+//        sourceDao.resume(sourceName);
+//        // stopping
+//        Thread.sleep(1000L);
+//        sourceDao.stop(sourceName);
 
-        Assert.assertThat(sourceDao.getStatus(sourceName), is("PAUSING"));
 
-        // resuming
-        sourceDao.resume(sourceName);
 
-        Thread.sleep(SOURCE_WAIT_TIME_MS);
-        log.info("waited - {} seconds", SOURCE_WAIT_TIME_MS);
 
-        Assert.assertThat(sourceDao.getStatus(sourceName), is("RESUMING"));
 
-        // stopping
-        sourceDao.stop(sourceName);
 
-        Thread.sleep(SOURCE_WAIT_TIME_MS);
-        log.info("waited - {} seconds", SOURCE_WAIT_TIME_MS);
-
-        Assert.assertThat(sourceDao.getStatus(sourceName), is("STOPPING"));
     }
 
     private Source buildSource(String sourceName, String streamName, String status) {
