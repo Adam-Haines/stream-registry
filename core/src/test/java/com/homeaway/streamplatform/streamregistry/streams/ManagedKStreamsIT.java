@@ -21,6 +21,7 @@ import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
 
 import org.junit.Assert;
+import org.junit.Ignore;
 import org.junit.Test;
 
 import com.homeaway.digitalplatform.streamregistry.AvroStream;
@@ -65,6 +66,7 @@ public class ManagedKStreamsIT extends BaseResourceIT {
      *
      * @throws InterruptedException
      */
+    @Ignore
     @Test
     public void testCreateAndDeleteStream() throws InterruptedException {
         String streamName = "managed-kstreams-test-insert-and-delete-stream";
