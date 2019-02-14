@@ -116,7 +116,7 @@ public class BaseResourceIT {
     public static final String OTHER_HINT = "other-alias";
 
     /** wait for this amount before timeout of test */
-    protected static final int TEST_STARTUP_TIMEOUT_MS = 10000;
+    protected static final int TEST_STARTUP_TIMEOUT_MS = 100;
 
     // TODO: Make resources "consistent" by having all writes (mutations)
     //     - wait some timeout period for the processor to process
@@ -167,7 +167,7 @@ public class BaseResourceIT {
     private static final int DEFAULT_ZK_CONNECTION_TIMEOUT_MS = 8 * 1000;
 
 
-    public static void createTopic(String topic, int partitions, int replication, Properties topicConfig) {
+    protected static void createTopic(String topic, int partitions, int replication, Properties topicConfig) {
         log.debug("Creating topic { name: {}, partitions: {}, replication: {}, config: {} }",
                 topic, partitions, replication, topicConfig);
         ZkUtils zkUtils = new ZkUtils(ZKCLIENT, new ZkConnection(zookeeperQuorum), false);

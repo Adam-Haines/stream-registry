@@ -29,6 +29,7 @@ import com.homeaway.streamplatform.streamregistry.model.Source;
 import com.homeaway.streamplatform.streamregistry.streams.KStreamsProcessorListener;
 import io.confluent.kafka.serializers.AbstractKafkaAvroSerDeConfig;
 import io.confluent.kafka.serializers.KafkaAvroDeserializer;
+import io.confluent.kafka.serializers.KafkaAvroDeserializerConfig;
 import io.confluent.kafka.serializers.KafkaAvroSerializer;
 import io.confluent.kafka.serializers.KafkaAvroSerializerConfig;
 import io.confluent.kafka.serializers.subject.TopicRecordNameStrategy;
@@ -344,13 +345,23 @@ public class SourceDaoImpl implements SourceDao, Managed {
         sourceProcessorConfig.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, KafkaAvroDeserializer.class.getName());
         sourceProcessorConfig.put(StreamsConfig.STATE_DIR_CONFIG, KSTREAMS_PROCESSOR_DIR.getPath());
         sourceProcessorConfig.put(ConsumerConfig.AUTO_COMMIT_INTERVAL_MS_CONFIG, 100);
+        sourceProcessorConfig.put(KafkaAvroDeserializerConfig.SPECIFIC_AVRO_READER_CONFIG, "true");
 
 
         StreamsBuilder builder = new StreamsBuilder();
-        StreamsBuilder commandBuilder = getSourceCommandBuilder(builder);
-        StreamsBuilder entityBuilder = getSourceEntityBuilder(commandBuilder);
+        builder = getSourceCommandBuilder(builder);
 
-        sourceProcessor = new KafkaStreams(entityBuilder.build(), sourceProcessorConfig);
+
+        final Map<String, String> serdeConfig =
+                Collections.singletonMap(AbstractKafkaAvroSerDeConfig.SCHEMA_REGISTRY_URL_CONFIG,
+                        commonConfig.getProperty(AbstractKafkaAvroSerDeConfig.SCHEMA_REGISTRY_URL_CONFIG));
+
+        final Serde<com.homeaway.digitalplatform.streamregistry.Source> sourceSpecificAvroSerde = new SpecificAvroSerde<>();
+        sourceSpecificAvroSerde.configure(serdeConfig, false);
+
+        builder = getSourceEntityBuilder(builder, sourceSpecificAvroSerde);
+
+        sourceProcessor = new KafkaStreams(builder.build(), sourceProcessorConfig);
 
         sourceProcessor.setStateListener((newState, oldState) -> {
             if (!isRunning && newState == KafkaStreams.State.RUNNING) {
@@ -369,35 +380,25 @@ public class SourceDaoImpl implements SourceDao, Managed {
 
     }
 
-   public StreamsBuilder getSourceEntityBuilder(StreamsBuilder sourceEntityBuilder) {
-
-        final Map<String, String> serdeConfig =
-                Collections.singletonMap(AbstractKafkaAvroSerDeConfig.SCHEMA_REGISTRY_URL_CONFIG,
-                        commonConfig.getProperty(AbstractKafkaAvroSerDeConfig.SCHEMA_REGISTRY_URL_CONFIG));
-
-        final Serde<com.homeaway.digitalplatform.streamregistry.Source> sourceSpecificAvroSerde = new SpecificAvroSerde<>();
-        sourceSpecificAvroSerde.configure(serdeConfig, false);
-
+    @SuppressWarnings("unchecked")
+    public StreamsBuilder getSourceEntityBuilder(StreamsBuilder sourceEntityBuilder, Serde<com.homeaway.digitalplatform.streamregistry.Source> specificAvroSerde) {
         sourceEntityKTable =
                 sourceEntityBuilder.globalTable(SOURCE_ENTITY_TOPIC_NAME,
-                        Materialized.<String, com.homeaway.digitalplatform.streamregistry.Source, KeyValueStore<Bytes, byte[]>>as(SOURCE_ENTITY_STORE_NAME)
-                .withKeySerde(Serdes.String())
-                .withValueSerde(sourceSpecificAvroSerde));
-
+                        Materialized.<String, com.homeaway.digitalplatform.streamregistry.Source,
+                                KeyValueStore<Bytes, byte[]>>as(SOURCE_ENTITY_STORE_NAME)
+                                .withKeySerde(Serdes.String())
+                                .withValueSerde(specificAvroSerde));
         return sourceEntityBuilder;
     }
 
 
-
     @SuppressWarnings("unchecked")
     public StreamsBuilder getSourceCommandBuilder(StreamsBuilder sourceCommandBuilder) {
-
         sourceCommandBuilder
                 .stream(SOURCE_COMMANDS_TOPIC)
                 .map((sourceName, command) ->
                         new ProcessRecord().process(command))
                 .to(SOURCE_ENTITY_TOPIC_NAME);
-
         return sourceCommandBuilder;
     }
 
@@ -529,8 +530,8 @@ public class SourceDaoImpl implements SourceDao, Managed {
                 return getNewAvroEntity(((SourceUpdateRequested) entity).getSource(),
                         Status.UPDATING);
             } else if (entity instanceof SourceStartRequested) {
-                return getNewAvroEntityForExistingSource(((SourceStartRequested) entity)
-                        .getSourceName(), Status.STARTING);
+                return getNewAvroEntityForExistingSource(((SourceStartRequested) entity).getSourceName(),
+                        Status.STARTING);
             } else if (entity instanceof SourcePauseRequested) {
                 return getNewAvroEntityForExistingSource(((SourcePauseRequested) entity).getSourceName(),
                         Status.PAUSING);
@@ -540,8 +541,9 @@ public class SourceDaoImpl implements SourceDao, Managed {
             } else if (entity instanceof SourceStopRequested) {
                 return getNewAvroEntityForExistingSource(((SourceStopRequested) entity).getSourceName(),
                         Status.STOPPING);
+            } else {
+                throw new RuntimeException("Unsupported command type for source");
             }
-            return null;
         }
     }
 

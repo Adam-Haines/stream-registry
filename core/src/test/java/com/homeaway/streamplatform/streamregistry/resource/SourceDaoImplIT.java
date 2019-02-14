@@ -1,12 +1,9 @@
 /* Copyright (c) 2018 Expedia Group.
  * All rights reserved.  http://www.homeaway.com
-
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
-
  *      http://www.apache.org/licenses/LICENSE-2.0
-
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -15,128 +12,153 @@
  */
 package com.homeaway.streamplatform.streamregistry.resource;
 
-import com.homeaway.digitalplatform.streamregistry.Header;
-import com.homeaway.digitalplatform.streamregistry.SourceCreateRequested;
-import com.homeaway.digitalplatform.streamregistry.SourcePauseRequested;
-import com.homeaway.digitalplatform.streamregistry.SourceResumeRequested;
-import com.homeaway.digitalplatform.streamregistry.SourceStartRequested;
-import com.homeaway.digitalplatform.streamregistry.SourceStopRequested;
-import com.homeaway.digitalplatform.streamregistry.SourceUpdateRequested;
+import com.google.common.base.Preconditions;
 import com.homeaway.streamplatform.streamregistry.db.dao.impl.SourceDaoImpl;
 import com.homeaway.streamplatform.streamregistry.model.Source;
 import com.homeaway.streamplatform.streamregistry.model.SourceType;
-import io.confluent.kafka.schemaregistry.client.MockSchemaRegistryClient;
-import io.confluent.kafka.schemaregistry.client.SchemaRegistryClient;
 import io.confluent.kafka.serializers.AbstractKafkaAvroSerDeConfig;
-import io.confluent.kafka.serializers.KafkaAvroDeserializer;
-import io.confluent.kafka.serializers.KafkaAvroSerializer;
 import io.confluent.kafka.streams.serdes.avro.SpecificAvroSerde;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.io.FileUtils;
 import org.apache.kafka.clients.CommonClientConfigs;
-import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.Serdes;
-import org.apache.kafka.common.serialization.StringDeserializer;
-import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.kafka.streams.StreamsConfig;
-import org.apache.kafka.streams.TopologyTestDriver;
-import org.apache.kafka.streams.test.ConsumerRecordFactory;
 import org.junit.Assert;
-import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Properties;
+import java.util.concurrent.CompletableFuture;
+
+import static org.hamcrest.core.Is.is;
 
 @Slf4j
-public class SourceDaoImplIT {
+public class SourceDaoImplIT extends BaseResourceIT {
+
+    // Takes longer for messages to show up in the consumer.
+    public static final int SOURCE_WAIT_TIME_MS = 300;
+
+    public static Properties commonConfig;
 
     private static SourceDaoImpl sourceDao;
 
-    private TopologyTestDriver sourceCommandDriver;
-    private TopologyTestDriver sourceEntityDriver;
-    private SchemaRegistryClient mockSchemaRegistryClient;
+    @BeforeClass
+    public static void setUp() throws Exception {
+
+        // Make sure all temp dirs are cleaned first
+        // This will solve a lot of the dir locked issue etc.
+        FileUtils.deleteDirectory(SourceDaoImpl.KSTREAMS_PROCESSOR_DIR);
+
+        commonConfig = new Properties();
+        commonConfig.put(CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
+        commonConfig.put(AbstractKafkaAvroSerDeConfig.SCHEMA_REGISTRY_URL_CONFIG, schemaRegistryURL);
+        commonConfig.put(StreamsConfig.DEFAULT_KEY_SERDE_CLASS_CONFIG, Serdes.StringSerde.class.getName());
+        commonConfig.put(StreamsConfig.DEFAULT_VALUE_SERDE_CLASS_CONFIG, SpecificAvroSerde.class.getName());
 
 
-    @Before
-    public void setUp() throws Exception {
+        createTopic(SourceDaoImpl.SOURCE_COMMANDS_TOPIC, 1, 1, new Properties());
+        createTopic(SourceDaoImpl.SOURCE_ENTITY_TOPIC_NAME, 1, 1, new Properties());
 
-        mockSchemaRegistryClient = new MockSchemaRegistryClient();
-        mockSchemaRegistryClient.register("source-command-events-v1-com.homeaway.digitalplatform.streamregistry.SourceCreateRequested", SourceCreateRequested.SCHEMA$);
-        mockSchemaRegistryClient.register("source-command-events-v1-com.homeaway.digitalplatform.streamregistry.SourceUpdateRequested", SourceUpdateRequested.SCHEMA$);
-        mockSchemaRegistryClient.register("source-command-events-v1-com.homeaway.digitalplatform.streamregistry.SourceStartRequested", SourceStartRequested.SCHEMA$);
-        mockSchemaRegistryClient.register("source-command-events-v1-com.homeaway.digitalplatform.streamregistry.SourcePauseRequested", SourcePauseRequested.SCHEMA$);
-        mockSchemaRegistryClient.register("source-command-events-v1-com.homeaway.digitalplatform.streamregistry.SourceResumeRequested", SourceResumeRequested.SCHEMA$);
-        mockSchemaRegistryClient.register("source-command-events-v1-com.homeaway.digitalplatform.streamregistry.SourceStopRequested", SourceStopRequested.SCHEMA$);
+        CompletableFuture<Boolean> initialized = new CompletableFuture<>();
+        sourceDao = new SourceDaoImpl(commonConfig,  () -> initialized.complete(true));
+        sourceDao.start();
 
-
-        Properties commonConfig = new Properties();
-        commonConfig.put(CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092");
-        commonConfig.put(AbstractKafkaAvroSerDeConfig.SCHEMA_REGISTRY_URL_CONFIG, "http://dummy:8080");
-        commonConfig.put(StreamsConfig.APPLICATION_ID_CONFIG, "something-new");
-        sourceDao = new SourceDaoImpl(commonConfig, null);
-
-        sourceCommandDriver = new TopologyTestDriver(sourceDao.getSourceCommandTopology(), commonConfig);
-        sourceEntityDriver = new TopologyTestDriver(sourceDao.getSourceEntityTopology(), commonConfig);
+        log.info(
+                "Waiting for processor's init method to be called (KV store created) before servicing the HTTP requests.");
+        long timeoutTimestamp = System.currentTimeMillis() + TEST_STARTUP_TIMEOUT_MS;
+        while (!initialized.isDone() && System.currentTimeMillis() <= timeoutTimestamp) {
+            Thread.sleep(10); // wait some cycles before checking again
+        }
+        Preconditions.checkState(initialized.isDone(), "Did not receive state store initialized signal, aborting.");
+        Preconditions.checkState(sourceDao.getSourceProcessor().state().isRunning(), "State store did not start. Aborting.");
+        log.info("Processor wait completed.");
     }
-
 
     @Test
-    public void testTopology() {
+    public void testSourceDaoImpl() throws Exception {
 
-        SpecificAvroSerde<com.homeaway.digitalplatform.streamregistry.SourceCreateRequested> createRequestedSerde =
-                new SpecificAvroSerde<>(mockSchemaRegistryClient);
+        String sourceName = "source-a";
+        String streamName = "stream-a";
 
-        Map<String, String> config = Collections.singletonMap("schema.registry.url", "http://dummy:8080");
+        Assert.assertNotNull(commonConfig);
 
-        createRequestedSerde.configure(config, false);
+        Source source = buildSource(sourceName, streamName, null);
 
-        @SuppressWarnings("unchecked")
-        ConsumerRecordFactory<String, com.homeaway.digitalplatform.streamregistry.SourceCreateRequested> sourceCreateConsumerFactory =
-                new ConsumerRecordFactory(SourceDaoImpl.SOURCE_COMMANDS_TOPIC,
-                new StringSerializer(), createRequestedSerde.serializer());
+        // inserting
+        sourceDao.insert(source);
 
-        com.homeaway.digitalplatform.streamregistry.SourceCreateRequested sourceCreateRequested = com.homeaway.digitalplatform.streamregistry.SourceCreateRequested.newBuilder()
-                .setHeader(Header.newBuilder().setTime(1L).build())
-                .setSourceName("source-a")
-                .setSource(buildAvroSource("streamA", "sourceA", "NOT_RUNNING"))
-                .build();
+        Thread.sleep(SOURCE_WAIT_TIME_MS + 50000);
+        log.info("waited - {} seconds", SOURCE_WAIT_TIME_MS);
 
-        sourceCommandDriver.pipeInput(sourceCreateConsumerFactory.create(SourceDaoImpl.SOURCE_COMMANDS_TOPIC, "sourceA", sourceCreateRequested));
+        Optional<Source> optionalSource = sourceDao.get(sourceName);
 
-        SpecificAvroSerde<com.homeaway.digitalplatform.streamregistry.Source> sourceEntitySerde =
-                new SpecificAvroSerde<>(mockSchemaRegistryClient);
+        Assert.assertThat(optionalSource.isPresent(), is(true));
 
-        sourceEntitySerde.configure(config, false);
+        Assert.assertThat("Get source should return the source that was inserted",
+                optionalSource.get().toString() , is(buildSource(sourceName, streamName, "NOT_RUNNING").toString()));
 
-        ProducerRecord record1 = sourceCommandDriver.readOutput(SourceDaoImpl.SOURCE_ENTITY_TOPIC_NAME, new StringDeserializer(),
-                sourceEntitySerde.deserializer());
+        Assert.assertThat(sourceDao.getStatus(sourceName), is("NOT_RUNNING"));
 
 
+        // updating
+        sourceDao.update(source);
+
+        Thread.sleep(SOURCE_WAIT_TIME_MS);
+        log.info("waited - {} seconds", SOURCE_WAIT_TIME_MS);
+
+        Assert.assertThat(sourceDao.getStatus(sourceName), is("UPDATING"));
 
 
+        // starting
+        sourceDao.start(sourceName);
+
+        Thread.sleep(SOURCE_WAIT_TIME_MS);
+
+        String startStatus = sourceDao.getStatus(sourceName);
+        Assert.assertThat(startStatus, is("STARTING"));
+        log.info("Start status - {}", startStatus);
+
+
+        // pausing
+        sourceDao.pause(sourceName);
+
+        Thread.sleep(SOURCE_WAIT_TIME_MS);
+        log.info("waited - {} seconds", SOURCE_WAIT_TIME_MS);
+
+        Assert.assertThat(sourceDao.getStatus(sourceName), is("PAUSING"));
+
+        // resuming
+        sourceDao.resume(sourceName);
+
+        Thread.sleep(SOURCE_WAIT_TIME_MS);
+        log.info("waited - {} seconds", SOURCE_WAIT_TIME_MS);
+
+        Assert.assertThat(sourceDao.getStatus(sourceName), is("RESUMING"));
+
+        // stopping
+        sourceDao.stop(sourceName);
+
+        Thread.sleep(SOURCE_WAIT_TIME_MS);
+        log.info("waited - {} seconds", SOURCE_WAIT_TIME_MS);
+
+        Assert.assertThat(sourceDao.getStatus(sourceName), is("STOPPING"));
     }
 
-    private static com.homeaway.digitalplatform.streamregistry.Source buildAvroSource(String sourceName, String streamName, String status) {
+    private Source buildSource(String sourceName, String streamName, String status) {
+
         Map<String, String> map = new HashMap<>();
         map.put("kinesis.url", "url");
 
-        return com.homeaway.digitalplatform.streamregistry.Source
-                .newBuilder()
-                .setHeader(Header.newBuilder().setTime(1L).build())
-                .setSourceName(sourceName)
-                .setStreamName(streamName)
-                .setSourceType("kinesis")
-                .setStatus("NOT_RUNNING")
-                .setTags(map)
-                .setImperativeConfiguration(map)
+        return Source.builder()
+                .sourceName(sourceName)
+                .streamName(streamName)
+                .sourceType(SourceType.SOURCE_TYPES.get(0))
+                .status(status)
+                .imperativeConfiguration(map)
+                .tags(map)
                 .build();
     }
-
-    class SpecificAvro extends SpecificAvroSerde {
-    }
-
-
 }
