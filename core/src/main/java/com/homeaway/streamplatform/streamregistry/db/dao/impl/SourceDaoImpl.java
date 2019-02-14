@@ -15,21 +15,18 @@
  */
 package com.homeaway.streamplatform.streamregistry.db.dao.impl;
 
-import static com.homeaway.streamplatform.streamregistry.model.SourceType.SOURCE_TYPES;
-
-import java.io.File;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Properties;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Future;
-
-import lombok.Getter;
-import lombok.extern.slf4j.Slf4j;
-
+import com.homeaway.digitalplatform.streamregistry.Header;
+import com.homeaway.digitalplatform.streamregistry.SourceCreateRequested;
+import com.homeaway.digitalplatform.streamregistry.SourcePauseRequested;
+import com.homeaway.digitalplatform.streamregistry.SourceResumeRequested;
+import com.homeaway.digitalplatform.streamregistry.SourceStartRequested;
+import com.homeaway.digitalplatform.streamregistry.SourceStopRequested;
+import com.homeaway.digitalplatform.streamregistry.SourceUpdateRequested;
+import com.homeaway.streamplatform.streamregistry.db.dao.SourceDao;
+import com.homeaway.streamplatform.streamregistry.exceptions.SourceNotFoundException;
+import com.homeaway.streamplatform.streamregistry.exceptions.UnsupportedSourceTypeException;
+import com.homeaway.streamplatform.streamregistry.model.Source;
+import com.homeaway.streamplatform.streamregistry.streams.KStreamsProcessorListener;
 import io.confluent.kafka.serializers.AbstractKafkaAvroSerDeConfig;
 import io.confluent.kafka.serializers.KafkaAvroDeserializer;
 import io.confluent.kafka.serializers.KafkaAvroSerializer;
@@ -37,7 +34,8 @@ import io.confluent.kafka.serializers.KafkaAvroSerializerConfig;
 import io.confluent.kafka.serializers.subject.TopicRecordNameStrategy;
 import io.confluent.kafka.streams.serdes.avro.SpecificAvroSerde;
 import io.dropwizard.lifecycle.Managed;
-
+import lombok.Getter;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
@@ -52,7 +50,6 @@ import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.KeyValue;
 import org.apache.kafka.streams.StreamsBuilder;
 import org.apache.kafka.streams.StreamsConfig;
-import org.apache.kafka.streams.Topology;
 import org.apache.kafka.streams.kstream.GlobalKTable;
 import org.apache.kafka.streams.kstream.Materialized;
 import org.apache.kafka.streams.state.KeyValueIterator;
@@ -60,20 +57,18 @@ import org.apache.kafka.streams.state.KeyValueStore;
 import org.apache.kafka.streams.state.QueryableStoreTypes;
 import org.apache.kafka.streams.state.ReadOnlyKeyValueStore;
 
-import com.homeaway.digitalplatform.streamregistry.Header;
-import com.homeaway.digitalplatform.streamregistry.SourceCreateRequested;
-import com.homeaway.digitalplatform.streamregistry.SourcePauseRequested;
-import com.homeaway.digitalplatform.streamregistry.SourceResumeRequested;
-import com.homeaway.digitalplatform.streamregistry.SourceStartRequested;
-import com.homeaway.digitalplatform.streamregistry.SourceStopRequested;
-import com.homeaway.digitalplatform.streamregistry.SourceUpdateRequested;
-import com.homeaway.streamplatform.streamregistry.db.dao.SourceDao;
-import com.homeaway.streamplatform.streamregistry.exceptions.SourceNotFoundException;
-import com.homeaway.streamplatform.streamregistry.exceptions.UnsupportedSourceTypeException;
-import com.homeaway.streamplatform.streamregistry.model.Source;
-import com.homeaway.streamplatform.streamregistry.streams.KStreamsProcessorListener;
-
 import javax.inject.Singleton;
+import java.io.File;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Properties;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
+
+import static com.homeaway.streamplatform.streamregistry.model.SourceType.SOURCE_TYPES;
 
 
 /**
@@ -105,25 +100,18 @@ public class SourceDaoImpl implements SourceDao, Managed {
      */
     public static final String SOURCE_COMMANDS_TOPIC = "source-command-events-v1";
 
-    public static final String SOURCE_COMMANDS_PROCESSOR_APP_ID = "source-commands-processor-v1";
-
-    public static final File SOURCE_COMMAND_EVENT_DIR = new File("/tmp/sourceCommands");
-    public static final File SOURCE_ENTITY_EVENT_DIR = new File("/tmp/sourceEntity");
+    public static final File KSTREAMS_PROCESSOR_DIR = new File("/tmp/sourceEntity");
 
     private final Properties commonConfig;
     private final KStreamsProcessorListener testListener;
     private boolean isRunning = false;
 
 
-    private Topology sourceCommandTopology;
-
-    private Topology sourceEntityTopology;
-
-    private KafkaStreams sourceEntityProcessor;
+    @Getter
+    private KafkaStreams sourceProcessor;
 
     private GlobalKTable<String, com.homeaway.digitalplatform.streamregistry.Source> sourceEntityKTable;
 
-    private KafkaStreams sourceCommandProcessor;
     private KafkaProducer<String, SourceCreateRequested> createRequestProducer;
     private KafkaProducer<String, SourceUpdateRequested> updateRequestProducer;
     private KafkaProducer<String, SourceStartRequested> startRequestProducer;
@@ -345,7 +333,7 @@ public class SourceDaoImpl implements SourceDao, Managed {
     }
 
 
-    private void initiateSourceEntityProcessor() {
+    private void initiateProcessor() {
         Properties sourceProcessorConfig = new Properties();
         commonConfig.forEach(sourceProcessorConfig::put);
         sourceProcessorConfig.put(StreamsConfig.APPLICATION_ID_CONFIG, SOURCE_ENTITY_PROCESSOR_APP_ID);
@@ -354,14 +342,17 @@ public class SourceDaoImpl implements SourceDao, Managed {
         sourceProcessorConfig.put(KafkaAvroSerializerConfig.VALUE_SUBJECT_NAME_STRATEGY, TopicRecordNameStrategy.class.getName());
         sourceProcessorConfig.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
         sourceProcessorConfig.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, KafkaAvroDeserializer.class.getName());
-        sourceProcessorConfig.put(StreamsConfig.STATE_DIR_CONFIG, SOURCE_ENTITY_EVENT_DIR.getPath());
+        sourceProcessorConfig.put(StreamsConfig.STATE_DIR_CONFIG, KSTREAMS_PROCESSOR_DIR.getPath());
         sourceProcessorConfig.put(ConsumerConfig.AUTO_COMMIT_INTERVAL_MS_CONFIG, 100);
 
-        this.sourceEntityTopology = getSourceEntityTopology();
 
-        sourceEntityProcessor = new KafkaStreams(sourceEntityTopology, sourceProcessorConfig);
+        StreamsBuilder builder = new StreamsBuilder();
+        StreamsBuilder commandBuilder = getSourceCommandBuilder(builder);
+        StreamsBuilder entityBuilder = getSourceEntityBuilder(commandBuilder);
 
-        sourceEntityProcessor.setStateListener((newState, oldState) -> {
+        sourceProcessor = new KafkaStreams(entityBuilder.build(), sourceProcessorConfig);
+
+        sourceProcessor.setStateListener((newState, oldState) -> {
             if (!isRunning && newState == KafkaStreams.State.RUNNING) {
                 isRunning = true;
                 if (testListener != null) {
@@ -370,39 +361,15 @@ public class SourceDaoImpl implements SourceDao, Managed {
             }
         });
 
-        sourceEntityProcessor.setUncaughtExceptionHandler((t, e) -> log.error("Source entity processor job failed", e));
-        sourceEntityProcessor.start();
-        log.info("Source entity processor started with properties - {}", sourceProcessorConfig);
+        sourceProcessor.setUncaughtExceptionHandler((t, e) -> log.error("Source entity processor job failed", e));
+        sourceProcessor.start();
+        log.info("Topology started with properties - {}", sourceProcessorConfig);
         log.info("Source entity state Store Name: {}", SOURCE_ENTITY_STORE_NAME);
-        sourceEntityStore = sourceEntityProcessor.store(sourceEntityKTable.queryableStoreName(), QueryableStoreTypes.keyValueStore());
+        sourceEntityStore = sourceProcessor.store(sourceEntityKTable.queryableStoreName(), QueryableStoreTypes.keyValueStore());
 
     }
 
-    private void initiateSourceCommandProcessor() {
-
-        // Pure commands, doesn't need a state store
-
-        Properties commandProcessorConfig = new Properties();
-        commonConfig.forEach(commandProcessorConfig::put);
-        commandProcessorConfig.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
-        commandProcessorConfig.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, KafkaAvroSerializer.class.getName());
-        commandProcessorConfig.put(KafkaAvroSerializerConfig.VALUE_SUBJECT_NAME_STRATEGY, TopicRecordNameStrategy.class.getName());
-        commandProcessorConfig.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
-        commandProcessorConfig.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, KafkaAvroDeserializer.class.getName());
-        commandProcessorConfig.put(StreamsConfig.APPLICATION_ID_CONFIG, SOURCE_COMMANDS_PROCESSOR_APP_ID);
-        commandProcessorConfig.put(StreamsConfig.STATE_DIR_CONFIG, SOURCE_COMMAND_EVENT_DIR.getPath());
-        commandProcessorConfig.put(ConsumerConfig.AUTO_COMMIT_INTERVAL_MS_CONFIG, 100);
-
-        this.sourceCommandTopology = getSourceCommandTopology();
-
-        sourceCommandProcessor = new KafkaStreams(sourceCommandTopology, commandProcessorConfig);
-        sourceCommandProcessor.setUncaughtExceptionHandler((t, e) -> log.error("Source command processor job failed", e));
-        sourceCommandProcessor.start();
-        log.info("Source commands processor job started with properties - {}", commandProcessorConfig);
-
-    }
-
-   public Topology getSourceEntityTopology() {
+   public StreamsBuilder getSourceEntityBuilder(StreamsBuilder sourceEntityBuilder) {
 
         final Map<String, String> serdeConfig =
                 Collections.singletonMap(AbstractKafkaAvroSerDeConfig.SCHEMA_REGISTRY_URL_CONFIG,
@@ -411,23 +378,19 @@ public class SourceDaoImpl implements SourceDao, Managed {
         final Serde<com.homeaway.digitalplatform.streamregistry.Source> sourceSpecificAvroSerde = new SpecificAvroSerde<>();
         sourceSpecificAvroSerde.configure(serdeConfig, false);
 
-        StreamsBuilder streamsBuilder = new StreamsBuilder();
-
         sourceEntityKTable =
-                streamsBuilder.globalTable(SOURCE_ENTITY_TOPIC_NAME,
+                sourceEntityBuilder.globalTable(SOURCE_ENTITY_TOPIC_NAME,
                         Materialized.<String, com.homeaway.digitalplatform.streamregistry.Source, KeyValueStore<Bytes, byte[]>>as(SOURCE_ENTITY_STORE_NAME)
                 .withKeySerde(Serdes.String())
                 .withValueSerde(sourceSpecificAvroSerde));
 
-        return streamsBuilder.build();
+        return sourceEntityBuilder;
     }
 
 
 
     @SuppressWarnings("unchecked")
-    public Topology getSourceCommandTopology() {
-
-        StreamsBuilder sourceCommandBuilder = new StreamsBuilder();
+    public StreamsBuilder getSourceCommandBuilder(StreamsBuilder sourceCommandBuilder) {
 
         sourceCommandBuilder
                 .stream(SOURCE_COMMANDS_TOPIC)
@@ -435,12 +398,11 @@ public class SourceDaoImpl implements SourceDao, Managed {
                         new ProcessRecord().process(command))
                 .to(SOURCE_ENTITY_TOPIC_NAME);
 
-        return sourceCommandBuilder.build();
+        return sourceCommandBuilder;
     }
 
     public enum Status {
         NOT_RUNNING("NOT_RUNNING"),
-        INSERTING("INSERTING"),
         STARTING("STARTING"),
         UPDATING("UPDATING"),
         PAUSING("PAUSING"),
@@ -497,32 +459,29 @@ public class SourceDaoImpl implements SourceDao, Managed {
 
     @Override
     public void start() {
-        initiateSourceEntityProcessor();
-        initiateSourceCommandProcessor();
+        initiateProcessor();
 
+        Properties producerConfig = new Properties();
+        commonConfig.forEach(producerConfig::put);
+        producerConfig.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
+        producerConfig.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, KafkaAvroSerializer.class.getName());
+        producerConfig.put(KafkaAvroSerializerConfig.VALUE_SUBJECT_NAME_STRATEGY, TopicRecordNameStrategy.class.getName());
 
-        Properties commandProcessorConfig = new Properties();
-        commonConfig.forEach(commandProcessorConfig::put);
-        commandProcessorConfig.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
-        commandProcessorConfig.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, KafkaAvroSerializer.class.getName());
-        commandProcessorConfig.put(KafkaAvroSerializerConfig.VALUE_SUBJECT_NAME_STRATEGY, TopicRecordNameStrategy.class.getName());
+        createRequestProducer = new KafkaProducer<>(producerConfig);
+        updateRequestProducer = new KafkaProducer<>(producerConfig);
+        startRequestProducer = new KafkaProducer<>(producerConfig);
+        pauseRequestProducer = new KafkaProducer<>(producerConfig);
+        stopRequestProducer = new KafkaProducer<>(producerConfig);
+        resumeRequestProducer = new KafkaProducer<>(producerConfig);
+        deleteProducer = new KafkaProducer<>(producerConfig);
 
-        createRequestProducer = new KafkaProducer<>(commandProcessorConfig);
-        updateRequestProducer = new KafkaProducer<>(commandProcessorConfig);
-        startRequestProducer = new KafkaProducer<>(commandProcessorConfig);
-        pauseRequestProducer = new KafkaProducer<>(commandProcessorConfig);
-        stopRequestProducer = new KafkaProducer<>(commandProcessorConfig);
-        resumeRequestProducer = new KafkaProducer<>(commandProcessorConfig);
-        deleteProducer = new KafkaProducer<>(commandProcessorConfig);
-
-        log.info("All the producers were initiated with the following common configuration - {}", commandProcessorConfig);
+        log.info("All the producers were initiated with the following common configuration - {}", producerConfig);
     }
 
 
     @Override
     public void stop() {
-        sourceCommandProcessor.close();
-        sourceEntityProcessor.close();
+        sourceProcessor.close();
         createRequestProducer.close();
         updateRequestProducer.close();
         deleteProducer.close();
