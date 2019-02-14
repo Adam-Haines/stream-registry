@@ -52,6 +52,7 @@ import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.KeyValue;
 import org.apache.kafka.streams.StreamsBuilder;
 import org.apache.kafka.streams.StreamsConfig;
+import org.apache.kafka.streams.Topology;
 import org.apache.kafka.streams.kstream.GlobalKTable;
 import org.apache.kafka.streams.kstream.Materialized;
 import org.apache.kafka.streams.state.KeyValueIterator;
@@ -113,8 +114,14 @@ public class SourceDaoImpl implements SourceDao, Managed {
     private final KStreamsProcessorListener testListener;
     private boolean isRunning = false;
 
-    @Getter
+
+    private Topology sourceCommandTopology;
+
+    private Topology sourceEntityTopology;
+
     private KafkaStreams sourceEntityProcessor;
+
+    private GlobalKTable<String, com.homeaway.digitalplatform.streamregistry.Source> sourceEntityKTable;
 
     private KafkaStreams sourceCommandProcessor;
     private KafkaProducer<String, SourceCreateRequested> createRequestProducer;
@@ -350,23 +357,9 @@ public class SourceDaoImpl implements SourceDao, Managed {
         sourceProcessorConfig.put(StreamsConfig.STATE_DIR_CONFIG, SOURCE_ENTITY_EVENT_DIR.getPath());
         sourceProcessorConfig.put(ConsumerConfig.AUTO_COMMIT_INTERVAL_MS_CONFIG, 100);
 
-        StreamsBuilder streamsBuilder = new StreamsBuilder();
+        this.sourceEntityTopology = getSourceEntityTopology();
 
-        final Map<String, String> serdeConfig =
-                Collections.singletonMap(AbstractKafkaAvroSerDeConfig.SCHEMA_REGISTRY_URL_CONFIG,
-                        commonConfig.getProperty(AbstractKafkaAvroSerDeConfig.SCHEMA_REGISTRY_URL_CONFIG));
-
-        final Serde<com.homeaway.digitalplatform.streamregistry.Source> sourceSpecificAvroSerde = new SpecificAvroSerde<>();
-        sourceSpecificAvroSerde.configure(serdeConfig, false);
-
-
-        GlobalKTable<String, com.homeaway.digitalplatform.streamregistry.Source> sourceStore =
-                streamsBuilder.globalTable(SOURCE_ENTITY_TOPIC_NAME,
-                        Materialized.<String, com.homeaway.digitalplatform.streamregistry.Source, KeyValueStore<Bytes, byte[]>>as(SOURCE_ENTITY_STORE_NAME)
-                .withKeySerde(Serdes.String())
-                .withValueSerde(sourceSpecificAvroSerde));
-
-        sourceEntityProcessor = new KafkaStreams(streamsBuilder.build(), sourceProcessorConfig);
+        sourceEntityProcessor = new KafkaStreams(sourceEntityTopology, sourceProcessorConfig);
 
         sourceEntityProcessor.setStateListener((newState, oldState) -> {
             if (!isRunning && newState == KafkaStreams.State.RUNNING) {
@@ -381,7 +374,8 @@ public class SourceDaoImpl implements SourceDao, Managed {
         sourceEntityProcessor.start();
         log.info("Source entity processor started with properties - {}", sourceProcessorConfig);
         log.info("Source entity state Store Name: {}", SOURCE_ENTITY_STORE_NAME);
-        sourceEntityStore = sourceEntityProcessor.store(sourceStore.queryableStoreName(), QueryableStoreTypes.keyValueStore());
+        sourceEntityStore = sourceEntityProcessor.store(sourceEntityKTable.queryableStoreName(), QueryableStoreTypes.keyValueStore());
+
     }
 
     private void initiateSourceCommandProcessor() {
@@ -399,18 +393,39 @@ public class SourceDaoImpl implements SourceDao, Managed {
         commandProcessorConfig.put(StreamsConfig.STATE_DIR_CONFIG, SOURCE_COMMAND_EVENT_DIR.getPath());
         commandProcessorConfig.put(ConsumerConfig.AUTO_COMMIT_INTERVAL_MS_CONFIG, 100);
 
+        this.sourceCommandTopology = getSourceCommandTopology();
 
-        sourceCommandBuilder();
-
-        sourceCommandProcessor = new KafkaStreams(sourceCommandBuilder().build(), commandProcessorConfig);
+        sourceCommandProcessor = new KafkaStreams(sourceCommandTopology, commandProcessorConfig);
         sourceCommandProcessor.setUncaughtExceptionHandler((t, e) -> log.error("Source command processor job failed", e));
         sourceCommandProcessor.start();
         log.info("Source commands processor job started with properties - {}", commandProcessorConfig);
 
     }
 
+   public Topology getSourceEntityTopology() {
+
+        final Map<String, String> serdeConfig =
+                Collections.singletonMap(AbstractKafkaAvroSerDeConfig.SCHEMA_REGISTRY_URL_CONFIG,
+                        commonConfig.getProperty(AbstractKafkaAvroSerDeConfig.SCHEMA_REGISTRY_URL_CONFIG));
+
+        final Serde<com.homeaway.digitalplatform.streamregistry.Source> sourceSpecificAvroSerde = new SpecificAvroSerde<>();
+        sourceSpecificAvroSerde.configure(serdeConfig, false);
+
+        StreamsBuilder streamsBuilder = new StreamsBuilder();
+
+        sourceEntityKTable =
+                streamsBuilder.globalTable(SOURCE_ENTITY_TOPIC_NAME,
+                        Materialized.<String, com.homeaway.digitalplatform.streamregistry.Source, KeyValueStore<Bytes, byte[]>>as(SOURCE_ENTITY_STORE_NAME)
+                .withKeySerde(Serdes.String())
+                .withValueSerde(sourceSpecificAvroSerde));
+
+        return streamsBuilder.build();
+    }
+
+
+
     @SuppressWarnings("unchecked")
-    private StreamsBuilder sourceCommandBuilder() {
+    public Topology getSourceCommandTopology() {
 
         StreamsBuilder sourceCommandBuilder = new StreamsBuilder();
 
@@ -420,7 +435,7 @@ public class SourceDaoImpl implements SourceDao, Managed {
                         new ProcessRecord().process(command))
                 .to(SOURCE_ENTITY_TOPIC_NAME);
 
-        return sourceCommandBuilder;
+        return sourceCommandBuilder.build();
     }
 
     public enum Status {

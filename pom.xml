@@ -338,7 +338,7 @@
             <dependency>
                 <groupId>io.confluent</groupId>
                 <artifactId>kafka-avro-serializer</artifactId>
-                <version>${confluent.version}</version>
+                <version>5.0.1</version>
                 <exclusions>
                     <exclusion>
                         <groupId>org.slf4j</groupId>
@@ -353,7 +353,7 @@
             <dependency>
                 <groupId>io.confluent</groupId>
                 <artifactId>kafka-streams-avro-serde</artifactId>
-                <version>${confluent.version}</version>
+                <version>5.0.1</version>
             </dependency>
             <dependency> <!-- Included for testing -->
                 <groupId>io.confluent</groupId>
@@ -505,6 +505,12 @@
                 <groupId>net.bytebuddy</groupId>
                 <artifactId>byte-buddy</artifactId>
                 <version>1.8.5</version>
+                <scope>test</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.kafka</groupId>
+                <artifactId>kafka-streams-test-utils</artifactId>
+                <version>${kafka.confluent.version}</version>
                 <scope>test</scope>
             </dependency>
         </dependencies>
