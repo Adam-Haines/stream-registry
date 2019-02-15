@@ -122,6 +122,8 @@ public class SourceDaoImpTest {
                 .setSource(buildAvroSource(sourceName, streamName))
                 .build();
 
+        sourceCreateConsumerFactory.create(SourceDaoImpl.SOURCE_COMMANDS_TOPIC, sourceName, sourceCreateRequested);
+
         topologyTestDriver.pipeInput(sourceCreateConsumerFactory.create(SourceDaoImpl.SOURCE_COMMANDS_TOPIC,
                 sourceName, sourceCreateRequested));
         ProducerRecord record1 = topologyTestDriver.readOutput(SourceDaoImpl.SOURCE_ENTITY_TOPIC_NAME, new StringDeserializer(),
@@ -140,7 +142,7 @@ public class SourceDaoImpTest {
                 .setSourceType("kinesis")
                 .setStatus("NOT_RUNNING")
                 .setTags(map)
-                .setImperativeConfiguration(map)
+                .setConfiguration(map)
                 .build();
     }
 
