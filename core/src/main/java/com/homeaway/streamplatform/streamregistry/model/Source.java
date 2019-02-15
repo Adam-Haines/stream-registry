@@ -64,7 +64,7 @@ public class Source {
      * This map will be used as properties AS-IS to the downstream agents.
      */
     @Nullable
-    private Map<String, String> imperativeConfiguration;
+    private Map<String, String> configuration;
 
     /**
      * Tags that are metadata level configuration. If this configuration is

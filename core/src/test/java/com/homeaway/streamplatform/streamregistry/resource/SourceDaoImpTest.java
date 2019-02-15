@@ -1,41 +1,37 @@
-/*
- *  Copyright (c) 2018 Expedia Group.
- *  * All rights reserved.  http://www.homeaway.com
- *
- *  * Licensed under the Apache License, Version 2.0 (the "License");
- *  * you may not use this file except in compliance with the License.
- *  * You may obtain a copy of the License at
- *
- *  *      http://www.apache.org/licenses/LICENSE-2.0
- *
- *  * Unless required by applicable law or agreed to in writing, software
- *  * distributed under the License is distributed on an "AS IS" BASIS,
- *  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *  * See the License for the specific language governing permissions and
- *  * limitations under the License.
- *
+/* Copyright (c) 2018 Expedia Group.
+ * All rights reserved.  http://www.homeaway.com
+
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+
+ *      http://www.apache.org/licenses/LICENSE-2.0
+
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package com.homeaway.streamplatform.streamregistry.resource;
 
-import com.homeaway.digitalplatform.streamregistry.Header;
-import com.homeaway.digitalplatform.streamregistry.Source;
-import com.homeaway.digitalplatform.streamregistry.SourceCreateRequested;
-import com.homeaway.digitalplatform.streamregistry.SourcePauseRequested;
-import com.homeaway.digitalplatform.streamregistry.SourceResumeRequested;
-import com.homeaway.digitalplatform.streamregistry.SourceStartRequested;
-import com.homeaway.digitalplatform.streamregistry.SourceStopRequested;
-import com.homeaway.digitalplatform.streamregistry.SourceUpdateRequested;
-import com.homeaway.streamplatform.streamregistry.db.dao.impl.SourceDaoImpl;
+import static com.homeaway.streamplatform.streamregistry.db.dao.impl.SourceDaoImpl.SOURCE_ENTITY_PROCESSOR_APP_ID;
+
+import java.io.File;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Properties;
+
+import lombok.extern.slf4j.Slf4j;
+
 import io.confluent.kafka.schemaregistry.client.MockSchemaRegistryClient;
 import io.confluent.kafka.schemaregistry.client.SchemaRegistryClient;
 import io.confluent.kafka.serializers.AbstractKafkaAvroSerDeConfig;
-import io.confluent.kafka.serializers.KafkaAvroDeserializer;
 import io.confluent.kafka.serializers.KafkaAvroDeserializerConfig;
-import io.confluent.kafka.serializers.KafkaAvroSerializer;
 import io.confluent.kafka.serializers.KafkaAvroSerializerConfig;
 import io.confluent.kafka.serializers.subject.TopicRecordNameStrategy;
 import io.confluent.kafka.streams.serdes.avro.SpecificAvroSerde;
-import lombok.extern.slf4j.Slf4j;
+
 import org.apache.commons.io.FileUtils;
 import org.apache.kafka.clients.CommonClientConfigs;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
@@ -52,13 +48,10 @@ import org.junit.Before;
 import org.junit.Ignore;
 import org.junit.Test;
 
-import java.io.File;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Properties;
-
-import static com.homeaway.streamplatform.streamregistry.db.dao.impl.SourceDaoImpl.SOURCE_ENTITY_PROCESSOR_APP_ID;
+import com.homeaway.digitalplatform.streamregistry.Header;
+import com.homeaway.digitalplatform.streamregistry.Source;
+import com.homeaway.digitalplatform.streamregistry.SourceCreateRequested;
+import com.homeaway.streamplatform.streamregistry.db.dao.impl.SourceDaoImpl;
 
 @Slf4j
 public class SourceDaoImpTest {
@@ -99,13 +92,13 @@ public class SourceDaoImpTest {
         sourceEntitySerde.configure(configMap, false);
 
         commonConfig.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
-        commonConfig.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, specificAvroSerde.serializer().getClass().getName());
+        commonConfig.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, specificAvroSerde.serializer());
         commonConfig.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
-        commonConfig.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, specificAvroSerde.deserializer().getClass().getName());
+        commonConfig.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, specificAvroSerde.deserializer());
 
         StreamsBuilder builder = new StreamsBuilder();
         builder = sourceDao.getSourceCommandBuilder(builder);
-        builder = sourceDao.getSourceEntityBuilder(builder, specificAvroSerde);
+        builder = sourceDao.getSourceEntityBuilder(builder, sourceEntitySerde);
 
         topologyTestDriver = new TopologyTestDriver(builder.build(), commonConfig);
     }
@@ -150,4 +143,10 @@ public class SourceDaoImpTest {
                 .setImperativeConfiguration(map)
                 .build();
     }
+
+     class LocalSpecificAvroSerde extends SpecificAvroSerde {
+
+
+
+     }
 }

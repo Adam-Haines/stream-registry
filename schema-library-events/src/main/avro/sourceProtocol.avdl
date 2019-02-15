@@ -38,7 +38,7 @@ protocol SourceProtocol {
   * Any additional commonConfig as a key, value map
   * This would be sourceType specific.
   */
-    union{null,map<string>} imperativeConfiguration = null;
+    union{null,map<string>} configuration = null;
 
   /**
   * Any additional commonConfig as a key, value map
@@ -48,6 +48,14 @@ protocol SourceProtocol {
 
   }
 
+
+  /**
+  * All the records related to commands
+  */
+
+
+
+  /** Command event for creating a source. */
   record SourceCreateRequested {
 
   /**
@@ -161,6 +169,20 @@ protocol SourceProtocol {
   }
 
   record SourceDeleteRequested {
+
+  /**
+  * Source header
+  */
+    Header header;
+
+  /**
+  * Name of the source
+  */
+    string sourceName;
+
+  }
+
+  record SourceRegistrationFailed {
 
   /**
   * Source header

@@ -15,18 +15,23 @@
  */
 package com.homeaway.streamplatform.streamregistry.db.dao.impl;
 
-import com.homeaway.digitalplatform.streamregistry.Header;
-import com.homeaway.digitalplatform.streamregistry.SourceCreateRequested;
-import com.homeaway.digitalplatform.streamregistry.SourcePauseRequested;
-import com.homeaway.digitalplatform.streamregistry.SourceResumeRequested;
-import com.homeaway.digitalplatform.streamregistry.SourceStartRequested;
-import com.homeaway.digitalplatform.streamregistry.SourceStopRequested;
-import com.homeaway.digitalplatform.streamregistry.SourceUpdateRequested;
-import com.homeaway.streamplatform.streamregistry.db.dao.SourceDao;
-import com.homeaway.streamplatform.streamregistry.exceptions.SourceNotFoundException;
-import com.homeaway.streamplatform.streamregistry.exceptions.UnsupportedSourceTypeException;
-import com.homeaway.streamplatform.streamregistry.model.Source;
-import com.homeaway.streamplatform.streamregistry.streams.KStreamsProcessorListener;
+import static com.homeaway.streamplatform.streamregistry.model.SourceType.SOURCE_TYPES;
+
+import java.io.File;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Properties;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
+
+import javax.inject.Singleton;
+
+import lombok.Getter;
+import lombok.extern.slf4j.Slf4j;
+
 import io.confluent.kafka.serializers.AbstractKafkaAvroSerDeConfig;
 import io.confluent.kafka.serializers.KafkaAvroDeserializer;
 import io.confluent.kafka.serializers.KafkaAvroDeserializerConfig;
@@ -35,8 +40,7 @@ import io.confluent.kafka.serializers.KafkaAvroSerializerConfig;
 import io.confluent.kafka.serializers.subject.TopicRecordNameStrategy;
 import io.confluent.kafka.streams.serdes.avro.SpecificAvroSerde;
 import io.dropwizard.lifecycle.Managed;
-import lombok.Getter;
-import lombok.extern.slf4j.Slf4j;
+
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
@@ -58,18 +62,18 @@ import org.apache.kafka.streams.state.KeyValueStore;
 import org.apache.kafka.streams.state.QueryableStoreTypes;
 import org.apache.kafka.streams.state.ReadOnlyKeyValueStore;
 
-import javax.inject.Singleton;
-import java.io.File;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Properties;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Future;
-
-import static com.homeaway.streamplatform.streamregistry.model.SourceType.SOURCE_TYPES;
+import com.homeaway.digitalplatform.streamregistry.Header;
+import com.homeaway.digitalplatform.streamregistry.SourceCreateRequested;
+import com.homeaway.digitalplatform.streamregistry.SourcePauseRequested;
+import com.homeaway.digitalplatform.streamregistry.SourceResumeRequested;
+import com.homeaway.digitalplatform.streamregistry.SourceStartRequested;
+import com.homeaway.digitalplatform.streamregistry.SourceStopRequested;
+import com.homeaway.digitalplatform.streamregistry.SourceUpdateRequested;
+import com.homeaway.streamplatform.streamregistry.db.dao.SourceDao;
+import com.homeaway.streamplatform.streamregistry.exceptions.SourceNotFoundException;
+import com.homeaway.streamplatform.streamregistry.exceptions.UnsupportedSourceTypeException;
+import com.homeaway.streamplatform.streamregistry.model.Source;
+import com.homeaway.streamplatform.streamregistry.streams.KStreamsProcessorListener;
 
 
 /**
@@ -451,7 +455,7 @@ public class SourceDaoImpl implements SourceDao, Managed {
                     .setStreamName(existingSource.getStreamName())
                     .setSourceType(existingSource.getSourceType())
                     .setStatus(status.toString())
-                    .setImperativeConfiguration(existingSource.getImperativeConfiguration())
+                    .setImperativeConfiguration(existingSource.getConfiguration())
                     .setTags(existingSource.getTags())
                     .build());
         }
@@ -500,7 +504,7 @@ public class SourceDaoImpl implements SourceDao, Managed {
                 .streamName(avroSource.getStreamName())
                 .status(avroSource.getStatus())
                 .created(avroSource.getHeader().getTime())
-                .imperativeConfiguration(avroSource.getImperativeConfiguration())
+                .configuration(avroSource.getImperativeConfiguration())
                 .tags(avroSource.getTags())
                 .build();
     }
@@ -512,7 +516,7 @@ public class SourceDaoImpl implements SourceDao, Managed {
                 .setSourceType(source.getSourceType())
                 .setStreamName(source.getStreamName())
                 .setStatus(status.toString())
-                .setImperativeConfiguration(source.getImperativeConfiguration())
+                .setImperativeConfiguration(source.getConfiguration())
                 .setTags(source.getTags())
                 .build();
     }

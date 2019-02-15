@@ -1,9 +1,12 @@
 /* Copyright (c) 2018 Expedia Group.
  * All rights reserved.  http://www.homeaway.com
+
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
+
  *      http://www.apache.org/licenses/LICENSE-2.0
+
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -12,13 +15,21 @@
  */
 package com.homeaway.streamplatform.streamregistry.resource;
 
+import static org.hamcrest.core.Is.is;
+
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Properties;
+import java.util.concurrent.CompletableFuture;
+
+import lombok.extern.slf4j.Slf4j;
+
 import com.google.common.base.Preconditions;
-import com.homeaway.streamplatform.streamregistry.db.dao.impl.SourceDaoImpl;
-import com.homeaway.streamplatform.streamregistry.model.Source;
-import com.homeaway.streamplatform.streamregistry.model.SourceType;
+
 import io.confluent.kafka.serializers.AbstractKafkaAvroSerDeConfig;
 import io.confluent.kafka.streams.serdes.avro.SpecificAvroSerde;
-import lombok.extern.slf4j.Slf4j;
+
 import org.apache.commons.io.FileUtils;
 import org.apache.kafka.clients.CommonClientConfigs;
 import org.apache.kafka.common.serialization.Serdes;
@@ -27,16 +38,15 @@ import org.junit.Assert;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Properties;
-import java.util.concurrent.CompletableFuture;
-
-import static org.hamcrest.core.Is.is;
+import com.homeaway.streamplatform.streamregistry.db.dao.impl.SourceDaoImpl;
+import com.homeaway.streamplatform.streamregistry.model.Source;
+import com.homeaway.streamplatform.streamregistry.model.SourceType;
 
 @Slf4j
 public class SourceDaoImplIT extends BaseResourceIT {
+
+
+    //TODO: Document the FSM in a matrix for architecture
 
     // Takes longer for messages to show up in the consumer.
     public static final int SOURCE_WAIT_TIME_MS = 300;
@@ -83,14 +93,12 @@ public class SourceDaoImplIT extends BaseResourceIT {
         String sourceName = "source-a";
         String streamName = "stream-a";
 
-        Assert.assertNotNull(commonConfig);
-
         Source source = buildSource(sourceName, streamName, null);
 
-        // inserting
+        //FIXME: Do this at the resource layer
+        // Use procedural abstraction. Call the methods inserting instead of inserted
         sourceDao.insert(source);
 
-        Thread.sleep(SOURCE_WAIT_TIME_MS + 50000);
         log.info("waited - {} seconds", SOURCE_WAIT_TIME_MS);
 
         Optional<Source> optionalSource = sourceDao.get(sourceName);
@@ -98,13 +106,20 @@ public class SourceDaoImplIT extends BaseResourceIT {
         Assert.assertThat(optionalSource.isPresent(), is(true));
 
         Assert.assertThat("Get source should return the source that was inserted",
-                optionalSource.get().toString() , is(buildSource(sourceName, streamName, "NOT_RUNNING").toString()));
+                optionalSource.get().toString() , is(buildSource(sourceName, streamName, "NOT_STARTED").toString()));
 
-        Assert.assertThat(sourceDao.getStatus(sourceName), is("NOT_RUNNING"));
+        Assert.assertThat(sourceDao.getStatus(sourceName), is("NOT_STARTED"));
+
+
+        //FIXME: Cannot do other commands, while the state is invalid FSM
 
 
         // updating
+        //FIXME: Break up the tests into more simpler units
+        //FIXME: Add a test for updating state and return 400
         sourceDao.update(source);
+
+
 
         Thread.sleep(SOURCE_WAIT_TIME_MS);
         log.info("waited - {} seconds", SOURCE_WAIT_TIME_MS);
@@ -156,8 +171,7 @@ public class SourceDaoImplIT extends BaseResourceIT {
                 .sourceName(sourceName)
                 .streamName(streamName)
                 .sourceType(SourceType.SOURCE_TYPES.get(0))
-                .status(status)
-                .imperativeConfiguration(map)
+                .configuration(map)
                 .tags(map)
                 .build();
     }
