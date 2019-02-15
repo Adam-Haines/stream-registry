@@ -436,7 +436,7 @@ public class SourceDaoImpl implements SourceDao, Managed {
                 .setStreamName(source.getStreamName())
                 .setSourceType(source.getSourceType())
                 .setStatus(status.toString())
-                .setImperativeConfiguration(source.getImperativeConfiguration())
+                .setConfiguration(source.getConfiguration())
                 .setTags(source.getTags())
                 .build());
     }
@@ -455,7 +455,7 @@ public class SourceDaoImpl implements SourceDao, Managed {
                     .setStreamName(existingSource.getStreamName())
                     .setSourceType(existingSource.getSourceType())
                     .setStatus(status.toString())
-                    .setImperativeConfiguration(existingSource.getConfiguration())
+                    .setConfiguration(existingSource.getConfiguration())
                     .setTags(existingSource.getTags())
                     .build());
         }
@@ -504,7 +504,7 @@ public class SourceDaoImpl implements SourceDao, Managed {
                 .streamName(avroSource.getStreamName())
                 .status(avroSource.getStatus())
                 .created(avroSource.getHeader().getTime())
-                .configuration(avroSource.getImperativeConfiguration())
+                .configuration(avroSource.getConfiguration())
                 .tags(avroSource.getTags())
                 .build();
     }
@@ -516,7 +516,7 @@ public class SourceDaoImpl implements SourceDao, Managed {
                 .setSourceType(source.getSourceType())
                 .setStreamName(source.getStreamName())
                 .setStatus(status.toString())
-                .setImperativeConfiguration(source.getConfiguration())
+                .setConfiguration(source.getConfiguration())
                 .setTags(source.getTags())
                 .build();
     }
