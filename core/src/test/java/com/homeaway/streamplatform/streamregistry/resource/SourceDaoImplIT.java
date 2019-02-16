@@ -17,6 +17,7 @@ package com.homeaway.streamplatform.streamregistry.resource;
 
 import static org.hamcrest.core.Is.is;
 
+import java.io.File;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -60,7 +61,7 @@ public class SourceDaoImplIT extends BaseResourceIT {
 
         // Make sure all temp dirs are cleaned first
         // This will solve a lot of the dir locked issue etc.
-        FileUtils.deleteDirectory(SourceDaoImpl.KSTREAMS_PROCESSOR_DIR);
+        FileUtils.deleteDirectory(new File(SourceDaoImpl.SOURCE_PROCESSOR_DIRNAME));
 
         commonConfig = new Properties();
         commonConfig.put(CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
@@ -69,7 +70,7 @@ public class SourceDaoImplIT extends BaseResourceIT {
         commonConfig.put(StreamsConfig.DEFAULT_VALUE_SERDE_CLASS_CONFIG, SpecificAvroSerde.class.getName());
 
 
-        createTopic(SourceDaoImpl.SOURCE_COMMANDS_TOPIC, 1, 1, new Properties());
+        createTopic(SourceDaoImpl.SOURCE_COMMANDS_TOPIC_NAME, 1, 1, new Properties());
         createTopic(SourceDaoImpl.SOURCE_ENTITY_TOPIC_NAME, 1, 1, new Properties());
 
         CompletableFuture<Boolean> initialized = new CompletableFuture<>();

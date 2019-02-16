@@ -32,12 +32,15 @@ import io.confluent.kafka.serializers.KafkaAvroSerializerConfig;
 import io.confluent.kafka.serializers.subject.TopicRecordNameStrategy;
 import io.confluent.kafka.streams.serdes.avro.SpecificAvroSerde;
 
+import org.apache.avro.specific.SpecificRecord;
 import org.apache.commons.io.FileUtils;
 import org.apache.kafka.clients.CommonClientConfigs;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.Serde;
+import org.apache.kafka.common.serialization.Serializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.kafka.streams.StreamsBuilder;
@@ -45,7 +48,6 @@ import org.apache.kafka.streams.StreamsConfig;
 import org.apache.kafka.streams.TopologyTestDriver;
 import org.apache.kafka.streams.test.ConsumerRecordFactory;
 import org.junit.Before;
-import org.junit.Ignore;
 import org.junit.Test;
 
 import com.homeaway.digitalplatform.streamregistry.Header;
@@ -60,7 +62,7 @@ public class SourceDaoImpTest {
 
     private TopologyTestDriver topologyTestDriver;
     private SchemaRegistryClient mockSchemaRegistryClient = new MockSchemaRegistryClient();
-    private SpecificAvroSerde specificAvroSerde;
+    private SpecificAvroSerde<SpecificRecord> specificAvroSerde;
     private Serde<Source> sourceEntitySerde;
     private static final File KSTREAMS_PROCESSOR_DIR = new File("/tmp/source-processor");
 
@@ -86,24 +88,22 @@ public class SourceDaoImpTest {
         specificAvroSerde = new SpecificAvroSerde<>(mockSchemaRegistryClient);
         specificAvroSerde.configure(configMap, false);
 
-        sourceDao = new SourceDaoImpl(commonConfig, null);
-
-        sourceEntitySerde = new SpecificAvroSerde<>(mockSchemaRegistryClient);
-        sourceEntitySerde.configure(configMap, false);
-
         commonConfig.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
         commonConfig.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, specificAvroSerde.serializer());
         commonConfig.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
         commonConfig.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, specificAvroSerde.deserializer());
 
+        sourceDao = new SourceDaoImpl(commonConfig, null);
+
+        sourceEntitySerde = new SpecificAvroSerde<>(mockSchemaRegistryClient);
+        sourceEntitySerde.configure(configMap, false);
+
         StreamsBuilder builder = new StreamsBuilder();
-        builder = sourceDao.getSourceCommandBuilder(builder);
-        builder = sourceDao.getSourceEntityBuilder(builder, sourceEntitySerde);
+        sourceDao.declareStreamProcessor(builder, specificAvroSerde, sourceEntitySerde);
 
         topologyTestDriver = new TopologyTestDriver(builder.build(), commonConfig);
     }
 
-    @Ignore
     @Test
     public void testTopology() {
 
@@ -111,10 +111,9 @@ public class SourceDaoImpTest {
         final String sourceName = "source-a";
         final String streamName = "stream-a";
 
-        @SuppressWarnings("unchecked")
-        ConsumerRecordFactory<String, SourceCreateRequested> sourceCreateConsumerFactory =
-                new ConsumerRecordFactory(SourceDaoImpl.SOURCE_COMMANDS_TOPIC,
-                new StringSerializer(), specificAvroSerde.serializer());
+        ConsumerRecordFactory<String, SpecificRecord> sourceCreateConsumerFactory =
+                new ConsumerRecordFactory<>(SourceDaoImpl.SOURCE_COMMANDS_TOPIC_NAME,
+                        new StringSerializer(), specificAvroSerde.serializer());
 
         SourceCreateRequested sourceCreateRequested = SourceCreateRequested.newBuilder()
                 .setHeader(Header.newBuilder().setTime(1L).build())
@@ -122,11 +121,12 @@ public class SourceDaoImpTest {
                 .setSource(buildAvroSource(sourceName, streamName))
                 .build();
 
-        sourceCreateConsumerFactory.create(SourceDaoImpl.SOURCE_COMMANDS_TOPIC, sourceName, sourceCreateRequested);
+        ConsumerRecord<byte[], byte[]> record = sourceCreateConsumerFactory.create(SourceDaoImpl.SOURCE_COMMANDS_TOPIC_NAME,
+                sourceName, sourceCreateRequested);
+        topologyTestDriver.pipeInput(record);
 
-        topologyTestDriver.pipeInput(sourceCreateConsumerFactory.create(SourceDaoImpl.SOURCE_COMMANDS_TOPIC,
-                sourceName, sourceCreateRequested));
-        ProducerRecord record1 = topologyTestDriver.readOutput(SourceDaoImpl.SOURCE_ENTITY_TOPIC_NAME, new StringDeserializer(),
+        ProducerRecord record1 = topologyTestDriver.readOutput(SourceDaoImpl.SOURCE_ENTITY_TOPIC_NAME,
+                new StringDeserializer(),
                 sourceEntitySerde.deserializer());
     }
 
@@ -145,10 +145,4 @@ public class SourceDaoImpTest {
                 .setConfiguration(map)
                 .build();
     }
-
-     class LocalSpecificAvroSerde extends SpecificAvroSerde {
-
-
-
-     }
 }

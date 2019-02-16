@@ -41,6 +41,7 @@ import io.confluent.kafka.serializers.subject.TopicRecordNameStrategy;
 import io.confluent.kafka.streams.serdes.avro.SpecificAvroSerde;
 import io.dropwizard.lifecycle.Managed;
 
+import org.apache.avro.specific.SpecificRecord;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
@@ -51,12 +52,15 @@ import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.kafka.common.utils.Bytes;
+import org.apache.kafka.streams.Consumed;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.KeyValue;
 import org.apache.kafka.streams.StreamsBuilder;
 import org.apache.kafka.streams.StreamsConfig;
 import org.apache.kafka.streams.kstream.GlobalKTable;
+import org.apache.kafka.streams.kstream.KStream;
 import org.apache.kafka.streams.kstream.Materialized;
+import org.apache.kafka.streams.kstream.Produced;
 import org.apache.kafka.streams.state.KeyValueIterator;
 import org.apache.kafka.streams.state.KeyValueStore;
 import org.apache.kafka.streams.state.QueryableStoreTypes;
@@ -83,29 +87,22 @@ import com.homeaway.streamplatform.streamregistry.streams.KStreamsProcessorListe
 @Singleton
 @Slf4j
 public class SourceDaoImpl implements SourceDao, Managed {
-
-
-    /**
-     * Source entity store name
-     */
-    public static final String SOURCE_ENTITY_STORE_NAME = "source-entity-store-v1";
-
-    /**
-     * The constant SOURCE_ENTITY_TOPIC_NAME.
-     */
-    public static final String SOURCE_ENTITY_TOPIC_NAME = "source-entity-v1";
-
-    /**
-     * Application id for the Source entity processor
-     */
+    /** Application id for the Source entity processor */
     public static final String SOURCE_ENTITY_PROCESSOR_APP_ID = "source-entity-processor-v1";
 
-    /**
-     * The constant PRODUCER_TOPIC_NAME.
-     */
-    public static final String SOURCE_COMMANDS_TOPIC = "source-command-events-v1";
+    /** Source entity store name */
+    public static final String SOURCE_ENTITY_STORE_NAME = "source-entity-store-v1";
 
-    public static final File KSTREAMS_PROCESSOR_DIR = new File("/tmp/sourceEntity");
+    /** Source entity topic name */
+    public static final String SOURCE_ENTITY_TOPIC_NAME = "source-entity-v1";
+
+    /** Source command topic name */
+    public static final String SOURCE_COMMANDS_TOPIC_NAME = "source-command-events-v1";
+
+    /** Source processor dir name */
+    public static final String SOURCE_PROCESSOR_DIRNAME = "/tmp/stream-registry/streams/sourceEntity";
+
+    private static final File SOURCE_PROCESSOR_DIR = new File(SOURCE_PROCESSOR_DIRNAME);
 
     private final Properties commonConfig;
     private final KStreamsProcessorListener testListener;
@@ -153,7 +150,7 @@ public class SourceDaoImpl implements SourceDao, Managed {
 
         validateSourceIsSupported(source);
 
-        ProducerRecord<String, SourceCreateRequested> record = new ProducerRecord<>(SOURCE_COMMANDS_TOPIC, source.getSourceName(),
+        ProducerRecord<String, SourceCreateRequested> record = new ProducerRecord<>(SOURCE_COMMANDS_TOPIC_NAME, source.getSourceName(),
                 SourceCreateRequested.newBuilder()
                         .setHeader(Header.newBuilder().setTime(System.currentTimeMillis()).build())
                         .setSourceName(source.getSourceName())
@@ -181,7 +178,7 @@ public class SourceDaoImpl implements SourceDao, Managed {
     @Override
     public void update(Source source) {
 
-        ProducerRecord<String, SourceUpdateRequested> record = new ProducerRecord<>(SOURCE_COMMANDS_TOPIC, source.getSourceName(),
+        ProducerRecord<String, SourceUpdateRequested> record = new ProducerRecord<>(SOURCE_COMMANDS_TOPIC_NAME, source.getSourceName(),
                 SourceUpdateRequested.newBuilder()
                         .setHeader(Header.newBuilder().setTime(System.currentTimeMillis()).build())
                         .setSourceName(source.getSourceName())
@@ -208,7 +205,7 @@ public class SourceDaoImpl implements SourceDao, Managed {
 
         Optional<Source> source = get(sourceName);
         if (source.isPresent()) {
-            ProducerRecord<String, SourceStartRequested> record = new ProducerRecord<>(SOURCE_COMMANDS_TOPIC, source.get().getSourceName(),
+            ProducerRecord<String, SourceStartRequested> record = new ProducerRecord<>(SOURCE_COMMANDS_TOPIC_NAME, source.get().getSourceName(),
                     SourceStartRequested.newBuilder()
                             .setHeader(Header.newBuilder().setTime(System.currentTimeMillis()).build())
                             .setSourceName(source.get().getSourceName())
@@ -233,7 +230,7 @@ public class SourceDaoImpl implements SourceDao, Managed {
 
         Optional<Source> source = get(sourceName);
         if (source.isPresent()) {
-            ProducerRecord<String, SourcePauseRequested> record = new ProducerRecord<>(SOURCE_COMMANDS_TOPIC, source.get().getSourceName(),
+            ProducerRecord<String, SourcePauseRequested> record = new ProducerRecord<>(SOURCE_COMMANDS_TOPIC_NAME, source.get().getSourceName(),
                     SourcePauseRequested.newBuilder()
                             .setHeader(Header.newBuilder().setTime(System.currentTimeMillis()).build())
                             .setSourceName(source.get().getSourceName())
@@ -258,7 +255,7 @@ public class SourceDaoImpl implements SourceDao, Managed {
     public void resume(String sourceName) throws SourceNotFoundException {
         Optional<Source> source = get(sourceName);
         if (source.isPresent()) {
-            ProducerRecord<String, SourceResumeRequested> record = new ProducerRecord<>(SOURCE_COMMANDS_TOPIC, source.get().getSourceName(),
+            ProducerRecord<String, SourceResumeRequested> record = new ProducerRecord<>(SOURCE_COMMANDS_TOPIC_NAME, source.get().getSourceName(),
                     SourceResumeRequested.newBuilder()
                             .setHeader(Header.newBuilder().setTime(System.currentTimeMillis()).build())
                             .setSourceName(source.get().getSourceName())
@@ -281,7 +278,7 @@ public class SourceDaoImpl implements SourceDao, Managed {
     public void stop(String sourceName) throws SourceNotFoundException {
         Optional<Source> source = get(sourceName);
         if (source.isPresent()) {
-            ProducerRecord<String, SourceStopRequested> record = new ProducerRecord<>(SOURCE_COMMANDS_TOPIC, source.get().getSourceName(),
+            ProducerRecord<String, SourceStopRequested> record = new ProducerRecord<>(SOURCE_COMMANDS_TOPIC_NAME, source.get().getSourceName(),
                     SourceStopRequested.newBuilder()
                             .setHeader(Header.newBuilder().setTime(System.currentTimeMillis()).build())
                             .setSourceName(source.get().getSourceName())
@@ -347,23 +344,23 @@ public class SourceDaoImpl implements SourceDao, Managed {
         sourceProcessorConfig.put(KafkaAvroSerializerConfig.VALUE_SUBJECT_NAME_STRATEGY, TopicRecordNameStrategy.class.getName());
         sourceProcessorConfig.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
         sourceProcessorConfig.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, KafkaAvroDeserializer.class.getName());
-        sourceProcessorConfig.put(StreamsConfig.STATE_DIR_CONFIG, KSTREAMS_PROCESSOR_DIR.getPath());
+        sourceProcessorConfig.put(StreamsConfig.STATE_DIR_CONFIG, SOURCE_PROCESSOR_DIR.getPath());
         sourceProcessorConfig.put(ConsumerConfig.AUTO_COMMIT_INTERVAL_MS_CONFIG, 100);
         sourceProcessorConfig.put(KafkaAvroDeserializerConfig.SPECIFIC_AVRO_READER_CONFIG, "true");
-
-
-        StreamsBuilder builder = new StreamsBuilder();
-        builder = getSourceCommandBuilder(builder);
 
 
         final Map<String, String> serdeConfig =
                 Collections.singletonMap(AbstractKafkaAvroSerDeConfig.SCHEMA_REGISTRY_URL_CONFIG,
                         commonConfig.getProperty(AbstractKafkaAvroSerDeConfig.SCHEMA_REGISTRY_URL_CONFIG));
 
+        final Serde<SpecificRecord> commandEventSerde = new SpecificAvroSerde<>();
+        commandEventSerde.configure(serdeConfig, false);
+
         final Serde<com.homeaway.digitalplatform.streamregistry.Source> sourceSpecificAvroSerde = new SpecificAvroSerde<>();
         sourceSpecificAvroSerde.configure(serdeConfig, false);
 
-        builder = getSourceEntityBuilder(builder, sourceSpecificAvroSerde);
+        StreamsBuilder builder = new StreamsBuilder();
+        declareStreamProcessor(builder, commandEventSerde, sourceSpecificAvroSerde);
 
         sourceProcessor = new KafkaStreams(builder.build(), sourceProcessorConfig);
 
@@ -384,26 +381,25 @@ public class SourceDaoImpl implements SourceDao, Managed {
 
     }
 
-    @SuppressWarnings("unchecked")
-    public StreamsBuilder getSourceEntityBuilder(StreamsBuilder sourceEntityBuilder, Serde<com.homeaway.digitalplatform.streamregistry.Source> specificAvroSerde) {
-        sourceEntityKTable =
-                sourceEntityBuilder.globalTable(SOURCE_ENTITY_TOPIC_NAME,
-                        Materialized.<String, com.homeaway.digitalplatform.streamregistry.Source,
-                                KeyValueStore<Bytes, byte[]>>as(SOURCE_ENTITY_STORE_NAME)
-                                .withKeySerde(Serdes.String())
-                                .withValueSerde(specificAvroSerde));
-        return sourceEntityBuilder;
-    }
+    /**
+     * Declares the stream topology and declares the corresponding GlobalKTable
+     * @param builder Empty StreamsBuilder instance
+     * @param specificRecordSerde The Serde to use for the command events
+     * @param sourceSerde The Serde to use for the global ktable state store
+     */
+    public void declareStreamProcessor(StreamsBuilder builder, Serde<SpecificRecord> specificRecordSerde,
+                                       Serde<com.homeaway.digitalplatform.streamregistry.Source> sourceSerde) {
+        Serde<String> keySerde = Serdes.String();
 
+        // first declare our stream with command events as the input, note we specify our serdes here
+        KStream<String, SpecificRecord> kstream = builder.stream(SOURCE_COMMANDS_TOPIC_NAME, Consumed.with(keySerde, specificRecordSerde));
 
-    @SuppressWarnings("unchecked")
-    public StreamsBuilder getSourceCommandBuilder(StreamsBuilder sourceCommandBuilder) {
-        sourceCommandBuilder
-                .stream(SOURCE_COMMANDS_TOPIC)
-                .map((sourceName, command) ->
-                        new ProcessRecord().process(command))
-                .to(SOURCE_ENTITY_TOPIC_NAME);
-        return sourceCommandBuilder;
+        // now create our source entities (with compacted topic)
+        kstream.map((sourceName, command) -> new ProcessRecord<SpecificRecord>().process(command))
+                .to(SOURCE_ENTITY_TOPIC_NAME, Produced.with(keySerde, sourceSerde));
+
+        // finally bind a store to the source entity topic
+        sourceEntityKTable = builder.globalTable(SOURCE_ENTITY_TOPIC_NAME, Consumed.with(keySerde, sourceSerde));
     }
 
     public enum Status {
@@ -429,7 +425,7 @@ public class SourceDaoImpl implements SourceDao, Managed {
         }
     }
 
-    private KeyValue<String, com.homeaway.digitalplatform.streamregistry.Source> getNewAvroEntity(com.homeaway.digitalplatform.streamregistry.Source source, Status status) {
+    private KeyValue<String, com.homeaway.digitalplatform.streamregistry.Source> getSourceKeyValue(com.homeaway.digitalplatform.streamregistry.Source source, Status status) {
         return new KeyValue<>(source.getSourceName(), com.homeaway.digitalplatform.streamregistry.Source.newBuilder()
                 .setHeader(Header.newBuilder().setTime(System.currentTimeMillis()).build())
                 .setSourceName(source.getSourceName())
@@ -441,25 +437,23 @@ public class SourceDaoImpl implements SourceDao, Managed {
                 .build());
     }
 
-    private KeyValue<String, com.homeaway.digitalplatform.streamregistry.Source> getNewAvroEntityForExistingSource(String sourceName, Status status) {
+    private KeyValue<String, com.homeaway.digitalplatform.streamregistry.Source> getSourceKeyValueForExistingSource(String sourceName, Status status) {
 
         Optional<Source> optionalExistingSource = get(sourceName);
-
-        if (optionalExistingSource.isPresent()) {
-
-            Source existingSource = optionalExistingSource.get();
-
-            return new KeyValue<>(sourceName, com.homeaway.digitalplatform.streamregistry.Source.newBuilder()
-                    .setHeader(Header.newBuilder().setTime(System.currentTimeMillis()).build())
-                    .setSourceName(sourceName)
-                    .setStreamName(existingSource.getStreamName())
-                    .setSourceType(existingSource.getSourceType())
-                    .setStatus(status.toString())
-                    .setConfiguration(existingSource.getConfiguration())
-                    .setTags(existingSource.getTags())
-                    .build());
+        if (!optionalExistingSource.isPresent()) {
+            return null;
         }
-        return null;
+
+        Source existingSource = optionalExistingSource.get();
+
+        com.homeaway.digitalplatform.streamregistry.Source avroSource = new com.homeaway.digitalplatform.streamregistry.Source();
+        avroSource.setSourceName(existingSource.getSourceName());
+        avroSource.setStreamName(existingSource.getStreamName());
+        avroSource.setSourceType(existingSource.getSourceType());
+        avroSource.setConfiguration(existingSource.getConfiguration());
+        avroSource.setTags(existingSource.getTags());
+
+        return getSourceKeyValue(avroSource, status);
     }
 
     @Override
@@ -528,22 +522,22 @@ public class SourceDaoImpl implements SourceDao, Managed {
 
         KeyValue process(V entity) {
             if (entity instanceof SourceCreateRequested) {
-                return getNewAvroEntity(((SourceCreateRequested) entity).getSource(),
+                return getSourceKeyValue(((SourceCreateRequested) entity).getSource(),
                         Status.NOT_RUNNING);
             } else if (entity instanceof SourceUpdateRequested) {
-                return getNewAvroEntity(((SourceUpdateRequested) entity).getSource(),
+                return getSourceKeyValue(((SourceUpdateRequested) entity).getSource(),
                         Status.UPDATING);
             } else if (entity instanceof SourceStartRequested) {
-                return getNewAvroEntityForExistingSource(((SourceStartRequested) entity).getSourceName(),
+                return getSourceKeyValueForExistingSource(((SourceStartRequested) entity).getSourceName(),
                         Status.STARTING);
             } else if (entity instanceof SourcePauseRequested) {
-                return getNewAvroEntityForExistingSource(((SourcePauseRequested) entity).getSourceName(),
+                return getSourceKeyValueForExistingSource(((SourcePauseRequested) entity).getSourceName(),
                         Status.PAUSING);
             } else if (entity instanceof SourceResumeRequested) {
-                return getNewAvroEntityForExistingSource(((SourceResumeRequested) entity).getSourceName(),
+                return getSourceKeyValueForExistingSource(((SourceResumeRequested) entity).getSourceName(),
                         Status.RESUMING);
             } else if (entity instanceof SourceStopRequested) {
-                return getNewAvroEntityForExistingSource(((SourceStopRequested) entity).getSourceName(),
+                return getSourceKeyValueForExistingSource(((SourceStopRequested) entity).getSourceName(),
                         Status.STOPPING);
             } else {
                 throw new RuntimeException("Unsupported command type for source");
